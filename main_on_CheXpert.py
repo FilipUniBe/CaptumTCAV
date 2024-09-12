@@ -363,8 +363,17 @@ if __name__ == "__main__":
     path_load_model_2 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_2/densenet_model_bilinear_lr0.0001_epoches5-1.pt'
     path_load_model_3 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_3/markermodel_model_bilinear_lr0.0001_epoches5.pt'
 
+    path_load_model=path_load_model_1
+    if 0 in path_load_model:
+        modelnr=0
+    elif 1 in path_load_model:
+        modelnr=1
+    elif 2 in path_load_model:
+        modelnr=2
+    elif 3 in path_load_model:
+        modelnr=3
 
-    model=load_and_prepare_model(path_load_model_0, 5, device)
+    model=load_and_prepare_model(path_load_model, 5, device)
 
     layers = [
     "densenet121.features.denseblock1.denselayer6.conv2",
@@ -377,7 +386,7 @@ if __name__ == "__main__":
     mytcav = TCAV(model=model,
                   layers=layers,
                   layer_attr_method=LayerIntegratedGradients(
-                      model, None, multiply_by_inputs=False))
+                      model, None, multiply_by_inputs=False),save_path=f"./cav-model-{modelnr}/")
 
     experimental_set_rand = [[BCoA_concept, healthy_patches_concept], [BCoA_concept, random_patches_concept]]
 
@@ -389,6 +398,7 @@ if __name__ == "__main__":
 
     def BCOA():
         for target_class in range(5):
+            print(target_class)
             for images, _, _ in tqdm(test_dataloader, desc="Loading images into memory"):
                 images=images.to(device)
                 tcav_scores_w_random = mytcav.interpret(inputs=images,
@@ -398,10 +408,11 @@ if __name__ == "__main__":
                                                         )
                 break #stop after one batch
 
-            filename=f"CheXpert_absolute_TCAV_class_{target_class}.jpg"
+            filename=f"CheXpert_absolute_TCAV_class_{target_class}_model_{modelnr}.jpg"
             plot_tcav_scores(experimental_set_rand, tcav_scores_w_random, filename)
-            return
-    #BCOA()
+            print("plotted")
+        return
+    BCOA()
 
     print("finished")
 
@@ -418,7 +429,7 @@ if __name__ == "__main__":
                                                 )
         break  # stop after one batch
 
-    filename = f"CheXpert_relative_TCAV_class_{target_class}.jpg"
+    filename = f"CheXpert_relative_TCAV_class_{target_class}_model_{modelnr}.jpg"
     plot_tcav_scores(experimental_set_zig_dot, tcav_scores_w_random,filename)
 
     print("Script Finished")
