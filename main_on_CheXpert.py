@@ -1,4 +1,5 @@
 #conda install pytorch torchvision torchaudio cudatoolkit=11.8 -c pytorch
+import pickle
 import subprocess
 import sys
 from functools import partial
@@ -343,8 +344,8 @@ if __name__ == "__main__":
     device = setup_device(4)
 
     BCoA_concept = assemble_concept(BCoA, 0, device,concepts_path=concepts_path)
-    BCaA_concept = assemble_concept(BCaA, 1, device, concepts_path=concepts_path)
-    MSign_concept = assemble_concept(MSign, 2, device,concepts_path=concepts_path)
+    BCaA_concept = assemble_concept(BCaA, 3, device, concepts_path=concepts_path) #todo ID changed for pickle
+    MSign_concept = assemble_concept(MSign, 3, device,concepts_path=concepts_path) #todo ID changed for pickle
     FIHOOF_concept = assemble_concept(FIHOOF, 6, device, concepts_path=concepts_path)
     AB_concept = assemble_concept(AB, 7, device, concepts_path=concepts_path)
     BO_concept = assemble_concept(BO, 8, device, concepts_path=concepts_path)
@@ -355,22 +356,22 @@ if __name__ == "__main__":
     cable_concept = assemble_concept(cable, 13, device, concepts_path=concepts_path)
     Marker_concept = assemble_concept(Marker, 5, device, concepts_path=concepts_path)
 
-    healthy_patches_concept = assemble_concept(healthy_patches, 3, concepts_path=concepts_path,device=device)
-    random_patches_concept = assemble_concept(random_patches, 4, concepts_path=concepts_path,device=device)
+    healthy_patches_concept = assemble_concept(healthy_patches, 2, concepts_path=concepts_path,device=device) #todo ID changed for pickle
+    random_patches_concept = assemble_concept(random_patches, 1, concepts_path=concepts_path,device=device) #todo ID changed for pickle
 
     path_load_model_0 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_0/densenet pretrain unweighted bce with class weight wd0.0001_model_gc_lr0.0001_epoches5.pt'
     path_load_model_1 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_1/densenet_model_bilinear_lr0.0001_epoches5.pt'
     path_load_model_2 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_2/densenet_model_bilinear_lr0.0001_epoches5-1.pt'
     path_load_model_3 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_3/markermodel_model_bilinear_lr0.0001_epoches5.pt'
 
-    path_load_model=path_load_model_1
-    if 0 in path_load_model:
+    path_load_model=path_load_model_0
+    if "0" in path_load_model:
         modelnr=0
-    elif 1 in path_load_model:
+    elif "1" in path_load_model:
         modelnr=1
-    elif 2 in path_load_model:
+    elif "2" in path_load_model:
         modelnr=2
-    elif 3 in path_load_model:
+    elif "3" in path_load_model:
         modelnr=3
 
     model=load_and_prepare_model(path_load_model, 5, device)
@@ -388,7 +389,9 @@ if __name__ == "__main__":
                   layer_attr_method=LayerIntegratedGradients(
                       model, None, multiply_by_inputs=False),save_path=f"./cav-model-{modelnr}/")
 
-    experimental_set_rand = [[BCoA_concept, healthy_patches_concept], [BCoA_concept, random_patches_concept]]
+    #experimental_set_rand = [[BCoA_concept, healthy_patches_concept], [BCoA_concept, random_patches_concept]]
+    experimental_set_rand = [[BCoA_concept, random_patches_concept], [BCoA_concept, healthy_patches_concept]] #todo changed for pickle
+
 
     # Load sample images from folder
     # Load the dataloader
@@ -411,25 +414,47 @@ if __name__ == "__main__":
             filename=f"CheXpert_absolute_TCAV_class_{target_class}_model_{modelnr}.jpg"
             plot_tcav_scores(experimental_set_rand, tcav_scores_w_random, filename)
             print("plotted")
+            print("finished")
         return
-    BCOA()
 
-    print("finished")
 
-    experimental_set_zig_dot = [[BCoA_concept, BCaA_concept, MSign_concept]]
 
-    target_class=4
+    #BCOA()
 
-    for images, _, _ in tqdm(test_dataloader, desc="Loading images into memory"):
-        images = images.to(device)
-        tcav_scores_w_random = mytcav.interpret(inputs=images,
-                                                experimental_sets=experimental_set_zig_dot,
-                                                target=target_class,
-                                                n_steps=5,
-                                                )
-        break  # stop after one batch
 
-    filename = f"CheXpert_relative_TCAV_class_{target_class}_model_{modelnr}.jpg"
-    plot_tcav_scores(experimental_set_zig_dot, tcav_scores_w_random,filename)
+    def BCOA_BCAA_MSIGN():
+        experimental_set_zig_dot = [[BCoA_concept, BCaA_concept, MSign_concept]]
 
-    print("Script Finished")
+        target_class=4
+
+        for images, _, _ in tqdm(test_dataloader, desc="Loading images into memory"):
+            images = images.to(device)
+            tcav_scores_w_random = mytcav.interpret(inputs=images,
+                                                    experimental_sets=experimental_set_zig_dot,
+                                                    target=target_class,
+                                                    n_steps=5,
+                                                    )
+            break  # stop after one batch
+
+        filename = f"CheXpert_relative_TCAV_class_{target_class}_model_{modelnr}.jpg"
+        plot_tcav_scores(experimental_set_zig_dot, tcav_scores_w_random,filename)
+
+        print("Script Finished")
+        return
+
+    #BCOA_BCAA_MSIGN()
+
+    def BCOA_from_pickle():
+        target_class=3
+        pickle_file="/home/fkraehenbuehl/projects/SalCon/results/experiment_019_20240916-154625/combined_data.pkl"
+        with open(pickle_file, 'rb') as f:
+            combined_data = pickle.load(f)
+        tcav_score = combined_data['tcav_score']
+
+        filename=f"CheXpert_absolute_TCAV_class_{target_class}_model_{modelnr}_from_pickle.jpg"
+        plot_tcav_scores(experimental_set_rand, tcav_score, filename)
+        print("plotted")
+        print("finished")
+        return
+
+    BCOA_from_pickle()
