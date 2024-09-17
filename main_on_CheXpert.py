@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 from functools import partial
+from collections import defaultdict
 
 import numpy as np
 import os, glob
@@ -43,8 +44,8 @@ def generate_layer_labels(layers):
 
     return alphabet[:len(layers)]
 
-def plot_tcav_scores_grid(experimental_sets, savefolder,layers, filename,batching_filter,model_filter,name_filter,classes,repetitions):
-
+def plot_tcav_scores_grid(experimental_sets, savefolder,layers, filename,batching_filter,model_filter,name_filter,classes):
+    repetitions=3
     classes_list = range(classes)
     repetitions_list = range(repetitions)
     layer_labels = generate_layer_labels(layers)
@@ -487,7 +488,7 @@ def load_and_filter_pickles(directory, class_filter=None, batching_filter=None, 
     for file in pickle_files:
         # Extract class, batching, and repetition from the filename
         class_match = re.search(r'class_(\d+)', file)
-        batching_match = re.search(r'batching_(True|False)', file) #adapt filenames!! todo
+        batching_match = re.search(r'batching_(True|False)', file)
         repetition_match = re.search(r'rep_(\d+)', file)
         model_match = re.search(r'model_(\d+)', file)
         name_match = re.search(r'name_([^_]+)', file)
@@ -552,7 +553,7 @@ def calculate_mean_std(savefolder, layers, classes, repetitions, batching_filter
     return dict_of_stats
 
 
-def plot_tcav_scores_per_class(savefolder, filename, layers, dict_stats, experimental_sets):
+def plot_tcav_scores_per_class(savefolder, filename, layers, dict_stats, experimental_sets,repeat_nr):
 
     classes_list=range(5)
     num_classes=len(classes_list)
@@ -594,7 +595,116 @@ def plot_tcav_scores_per_class(savefolder, filename, layers, dict_stats, experim
             _ax.set_xticklabels(layers, fontsize=10)
             _ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(subset), fontsize=10)
 
-        fig.suptitle(f'TCAV Scores for Subset {subset_idx}', fontsize=16)
+        fig.suptitle(f'TCAV Scores for Subset {subset_idx} random: {repeat_nr}', fontsize=16)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to fit suptitle
+
+        # Save the figure
+        fullpath = os.path.join(savefolder, f'{filename}_subset_{subset_idx}.png')
+        plt.savefig(fullpath)
+        plt.close()
+
+    return
+
+def calculate_tcav_stats(savefolder, layers, experimental_set_rand, score_type="sign_count", repetition=None):
+
+    # Use defaultdict to avoid manual initialization of dictionaries
+    dict_of_stats = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict))))
+
+    for subset_idx, subset in enumerate(experimental_set_rand):
+
+        for class_id in range(5):
+
+            for score_layer in layers:
+
+                all_tcav_scores, _ = load_and_filter_pickles(savefolder, class_id, batching_filter, repetition,
+                                                             model_filter, name_filter)
+                for idx in range(2):
+
+                    score_list = [
+                        tcav_score["-".join([str(c.id) for c in subset])][score_layer][score_type][idx].cpu()
+                        for tcav_score in all_tcav_scores
+                    ]
+
+                    means = np.mean(score_list, axis=0)
+                    std = np.std(score_list, axis=0)
+
+                    dict_of_stats[subset_idx][class_id][score_layer][idx]={"means": means, "std":std}
+    return dict_of_stats
+
+
+def calculate_tcav_stats_with_repetitions(savefolder, layers, experimental_set_rand, score_type="sign_count",repetition=None
+                                          ):
+    # Use defaultdict to avoid manual initialization of dictionaries
+    dict_of_stats = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))))
+
+    for subset_idx, subset in enumerate(experimental_set_rand):
+
+        for class_id in range(5):
+
+                for score_layer in layers:
+
+                    all_tcav_scores, _ = load_and_filter_pickles(savefolder, class_id, batching_filter, repetition,
+                                                                 model_filter, name_filter)
+                    # Iterate over the number of repetitions
+                    for rep_num in range(1, len(all_tcav_scores) + 1):
+                        for idx in range(2):
+                            score_list = [
+                                tcav_score["-".join([str(c.id) for c in subset])][score_layer][score_type][idx].cpu()
+                                for tcav_score in all_tcav_scores[:rep_num]
+                            ]
+
+                            means = np.mean(score_list, axis=0)
+                            std = np.std(score_list, axis=0)
+
+                            dict_of_stats[subset_idx][class_id][score_layer][idx][rep_num] = {"means": means, "std": std}
+    return dict_of_stats
+
+
+def plot_tcav_means_across_repetitions(savefolder, filename, layers, dict_of_stats, experimental_sets,repeat_nr):
+    # Define classes (example range from 0 to 4)
+    classes_list = range(5)
+    num_classes = len(classes_list)
+
+    # Iterate through subsets
+    for subset_idx, subset in enumerate(experimental_sets):
+        fig, axs = plt.subplots(num_classes, 1, figsize=(15, 5 * num_classes), sharex=True)
+
+        for idx_class, class_id in enumerate(classes_list):
+            _ax = axs[idx_class]  # Use appropriate subplot for each class
+
+            for idx_concept in range(2):  # Assuming we are plotting two concepts (idx = 0 and 1)
+
+                for layer in layers:
+                    # Initialize lists to store mean and std values across repetitions
+                    repetition_means = []
+                    repetition_stds = []
+                    repetition_counts = list(range(1, repeat_nr + 1))  # Repetition numbers
+
+                    for rep_num in repetition_counts:
+                        layer_stats = dict_of_stats.get(subset_idx, {}).get(class_id, {}).get(layer, {}).get(
+                            idx_concept, {}).get(rep_num, {})
+                        means = layer_stats.get('means', np.zeros(len(layers)))  # If no data, default to 0
+                        stds = layer_stats.get('std', np.zeros(len(layers)))  # If no data, default to 0
+
+                        # Store means and std for the current repetition count
+                        repetition_means.append(means)
+                        repetition_stds.append(stds)
+
+                    # Convert to numpy arrays for easier plotting
+                    repetition_means = np.array(repetition_means)
+                    repetition_stds = np.array(repetition_stds)
+
+                    # Plot the means across repetitions for each layer
+                    _ax.plot(repetition_counts, repetition_means, label=f'Concept {idx_concept}, Layer {layer}')
+                    _ax.fill_between(repetition_counts, repetition_means - repetition_stds,
+                                     repetition_means + repetition_stds, alpha=0.3)
+
+            _ax.set_title(f'Class {class_id}', fontsize=14)
+            _ax.set_xlabel('Number of Repetitions', fontsize=12)
+            _ax.set_ylabel('Mean TCAV Score', fontsize=12)
+            _ax.legend(loc='upper left')
+
+        fig.suptitle(f'TCAV Scores Across Repetitions for Subset {subset_idx}', fontsize=16)
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to fit suptitle
 
         # Save the figure
@@ -689,47 +799,36 @@ if __name__ == "__main__":
         os.makedirs(savefolder)
 
     #run absolute comparision
-    repeat_nr = 3
+    repeat_nr = 14#50
     name=f"abs"
     #run_repetition_wrapper(repeat_nr,experimental_set_rand,name) #todo disabled for debug
-    #run_repetition_wrapper(repeat_nr,experimental_set_zig_dot,name) #todo disabled for debug
+    # name = f"rel"
+    # run_repetition_wrapper(repeat_nr,experimental_set_zig_dot,name) #todo disabled for debug
 
 
     name_filter = "abs"
-    batching_filter = False
+    batching_filter = True
     model_filter = None
     filename=f"gridplot_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
     classes=5
-    repetitions=3
 
-    # plot gridplot for the repetitions
-    #plot_tcav_scores_grid(experimental_set_rand, savefolder,layers, filename,batching_filter,model_filter,name_filter,classes,repetitions)
+    # plot gridplot for the repetitions (first 3)
+    plot_tcav_scores_grid(experimental_set_rand, savefolder,layers, filename,batching_filter,model_filter,name_filter,classes)
 
     repetition=None
     score_type="sign_count"
-    dict_of_stats={}
-    for subset_idx, subset in enumerate(experimental_set_rand):
-        dict_of_stats[subset_idx]={}
 
-        for class_id in range(5):
-            dict_of_stats[subset_idx][class_id]={}
-            all_tcav_scores, _ = load_and_filter_pickles(savefolder, class_id, batching_filter, repetition,
-                                                         model_filter, name_filter)
-
-            for score_layer in layers:
-                dict_of_stats[subset_idx][class_id][score_layer]={}
-                for idx in range(2):
-                    dict_of_stats[subset_idx][class_id][score_layer][idx] = {}  # Initialize dictionary for this class
-                    score_list=[]
-                    for tcav_score in all_tcav_scores:
-                        score_list.append(tcav_score["-".join([str(c.id) for c in subset])][score_layer][score_type][idx])
-                    score_list = [value.cpu() for value in score_list]
-                    means = np.mean(score_list, axis=0)
-                    std = np.std(score_list, axis=0)
-                    dict_of_stats[subset_idx][class_id][score_layer][idx]={"means": means, "std":std}
-
+    #barplot for means
+    dict_of_stats=calculate_tcav_stats(savefolder, layers, experimental_set_rand, score_type="sign_count", repetition=None)
     filename=f"meanplot_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
     plot_tcav_scores_per_class(savefolder, filename, layers, dict_of_stats,
-                               experimental_set_rand)
+                               experimental_set_rand,repeat_nr)
+
+    #line plot tracking means
+    dict_of_stats=calculate_tcav_stats_with_repetitions(savefolder, layers, experimental_set_rand, score_type="sign_count", repetition=None)
+    filename = f"trackingmean_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
+    plot_tcav_means_across_repetitions(savefolder, filename, layers, dict_of_stats,
+                               experimental_set_rand, repeat_nr)
+
 
     print("ran trough script")
