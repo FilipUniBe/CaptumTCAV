@@ -87,7 +87,7 @@ def assemble_concept(name, id, concepts_path="data/tcav/image/concepts/"):
 def format_float(f):
     return float('{:.3f}'.format(f) if abs(f) >= 0.0005 else '{:.3e}'.format(f))
 
-def plot_tcav_scores(experimental_sets, tcav_scores,filename):
+def plot_tcav_scores(experimental_sets, tcav_scores,filename,pathname):
     fig, ax = plt.subplots(1, len(experimental_sets), figsize = (25, 7))
 
     barWidth = 1 / (len(experimental_sets[0]) + 1)
@@ -113,7 +113,8 @@ def plot_tcav_scores(experimental_sets, tcav_scores,filename):
         # Create legend & Show graphic
         _ax.legend(fontsize=16)
 
-    plt.savefig(filename)
+    fullname=os.path.join(pathname,filename)
+    plt.savefig(fullname)
     plt.close()
     return
 
@@ -160,6 +161,10 @@ if __name__ == "__main__":
     hippo_ind = 344
     index_list=[zebra_ind,hippo_ind]
 
+    pathname='./zebra-figures'
+    if not os.path.exists(pathname):
+        os.makedirs(pathname)
+
     repetition_nr=3
     for repetition in range(repetition_nr):
 
@@ -191,7 +196,7 @@ if __name__ == "__main__":
 
             filename=f"absolute_TCAV_batching_true_ind_{indexes}_repetition_{repetition}.jpg"
 
-            plot_tcav_scores(experimental_set_rand, tcav_scores_w_random,filename)
+            plot_tcav_scores(experimental_set_rand, tcav_scores_w_random,filename,pathname)
 
             experimental_set_zig_dot = [[stripes_concept, zigzagged_concept, dotted_concept]]
 
@@ -200,6 +205,6 @@ if __name__ == "__main__":
                                                      target=indexes,
                                                      n_steps=5)
             filename = f"relative_TCAV_batching_true_ind_{indexes}_repetition_{repetition}.jpg"
-            plot_tcav_scores(experimental_set_zig_dot, tcav_scores_w_zig_dot,filename)
+            plot_tcav_scores(experimental_set_zig_dot, tcav_scores_w_zig_dot,filename,pathname)
 
             print("Script Finished")

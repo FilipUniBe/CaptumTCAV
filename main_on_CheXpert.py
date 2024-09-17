@@ -1,5 +1,6 @@
 #conda install pytorch torchvision torchaudio cudatoolkit=11.8 -c pytorch
 import pickle
+import re
 import subprocess
 import sys
 from functools import partial
@@ -32,6 +33,72 @@ from captum.concept import Concept
 from captum.concept._utils.data_iterator import dataset_to_dataloader, CustomIterableDataset
 from captum.concept._utils.common import concepts_to_str
 from tqdm import tqdm
+import string
+
+def generate_layer_labels(layers):
+    alphabet = list(string.ascii_uppercase)  # A to Z
+    if len(layers) > 26:
+        raise ValueError("More than 26 layers provided, no more letters available.")
+
+    return alphabet[:len(layers)]
+
+def plot_tcav_scores_grid(experimental_sets, savefolder,layers, filename,batching_filter,model_filter,name_filter,classes,repetitions):
+
+    classes_list = range(classes)
+    repetitions_list = range(repetitions)
+    layer_labels = generate_layer_labels(layers)
+
+    # Create the figure with a grid of subplots
+    fig, axs = plt.subplots(len(repetitions_list), len(classes_list), figsize=(20, 15))
+
+    barWidth = 0.15  # Adjusted width to reduce overlap
+    spacing = 0.2  # Add spacing between groups of bars
+
+    for idx_class, class_id in enumerate(classes_list):
+        for idx_rep, repetition in enumerate(repetitions_list):
+
+            all_tcav_scores,_ = load_and_filter_pickles(savefolder, idx_class, batching_filter,
+                                                                      idx_rep, model_filter, name_filter)
+            relevant_scores=all_tcav_scores[0]#must be just one though
+
+            _ax = axs[idx_rep, idx_class]  # Use appropriate subplot
+
+            # For each experimental set (concept), plot a bar for every layer
+            for idx_es, concepts in enumerate(experimental_sets):
+                concepts = experimental_sets[idx_es]
+                concepts_key = concepts_to_str(concepts)
+
+                pos = np.arange(len(layers)) * (barWidth + spacing)
+                for i in range(len(concepts)):
+                    adjusted_pos = pos + i * (barWidth + spacing)
+                    val = [format_float(scores['sign_count'][i]) for layer, scores in relevant_scores[concepts_key].items()]
+                    _ax.bar(adjusted_pos, val, width=barWidth, edgecolor='white', label=concepts[i].name)
+
+            # Add xticks on the middle of the group bars
+            _ax.set_title(f'Class {class_id}, Repetition {repetition}', fontsize=12)
+            _ax.set_xticks([r + 0.3 * barWidth for r in range(len(layers))])
+            _ax.set_xticklabels(layer_labels, fontsize=10)
+            _ax.set_xlabel('Layers')
+
+    # Add a single legend for all subplots
+    handles, labels = _ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper center', ncol=len(experimental_sets), bbox_to_anchor=(0.5, 0.1),
+               bbox_transform=fig.transFigure, fontsize=10)
+
+    # Adjust layout and save the figure
+    plt.tight_layout()
+    fullpath = os.path.join(savefolder, filename)
+    plt.suptitle(f'TCAV Scores for {filename}', fontsize=16)
+    plt.savefig(fullpath)
+    plt.close()
+
+    return
+
+
+def extract_from_filename(filename, tag):
+    """Extracts the value associated with a tag from a filename."""
+    match = re.search(fr'{tag}(\d+)', filename)
+    return int(match.group(1)) if match else None
 
 class LimitedCustomIterableDataset(CustomIterableDataset):
     def __init__(self, get_tensor_fn, concept_path, limit=None):
@@ -317,6 +384,7 @@ def plot_tcav_scores(experimental_sets,savefolder, tcav_scores,filename):
         _ax.legend(fontsize=16)
 
     fullpath=os.path.join(savefolder,filename)
+    plt.title(filename)
     plt.savefig(fullpath)
     plt.close()
     return
@@ -355,22 +423,29 @@ def BCOA_from_pickle():
     print("finished")
     return
 
-def run_TCAV_target_class_wrapper(experimental_set, name, savefolder, target_class=None, batching=True):
+def run_TCAV_target_class_wrapper(experimental_set,mytcav,name, savefolder, target_class=None, batching=True):
     if target_class is None:
         for target_class in range(5):
-            mean_scores=run_TCAV(target_class,experimental_set,batching)
             filename = f"CheXpert_{name}_class_{target_class}_model_{modelnr}_batching_{batching}.jpg"
-            plot_tcav_scores(experimental_set,savefolder, mean_scores, filename)
+            # If pickles exist, skip calculation and load results
+            pickle_path = os.path.join(savefolder, f'{filename}.pkl')
+            if os.path.exists(pickle_path):
+                print("using pickle")
+                with open(pickle_path, 'rb') as f:
+                    mean_scores = pickle.load(f)
+            else:
+                print("calculating from scratch")
+                mean_scores=run_TCAV(target_class,experimental_set,mytcav,batching)
+                with open(pickle_path, 'wb') as f:
+                    pickle.dump(mean_scores, f)
+
+            filename = f"CheXpert_{name}_class_{target_class}_model_{modelnr}_batching_{batching}.jpg"
+            plot_tcav_scores(experimental_set, savefolder, mean_scores, filename)
             print(f"saved {filename}")
 
-    else:
-        mean_scores = run_TCAV(target_class, experimental_set, batching)
-        filename = f"CheXpert_{name}_class_{target_class}_model_{modelnr}_batching_{batching}.jpg"
-        plot_tcav_scores(experimental_set,savefolder, mean_scores, filename)
-        print(f"saved {filename}")
     return
 
-def run_TCAV(target_class,experimental_set,batching=True):
+def run_TCAV(target_class,experimental_set,mytcav,batching=True):
 
     tcav_scores_all_batches=[]
     for images, _, _ in tqdm(test_dataloader, desc="Loading images into memory"):
@@ -386,9 +461,65 @@ def run_TCAV(target_class,experimental_set,batching=True):
             break #stop after one batch
     return mean_score(tcav_scores_all_batches)
 
+def run_repetition_wrapper(repeat_nr,experimental_set,name):
+    for current_repeat in tqdm(range(repeat_nr), desc="repeating calculation n times"):
+        mytcav = TCAV(model=model,
+                      layers=layers,
+                      layer_attr_method=LayerIntegratedGradients(
+                          model, None, multiply_by_inputs=False),
+                      save_path=f"./cav-model-{modelnr}-repeat-{current_repeat}/")
+
+        run_TCAV_target_class_wrapper(experimental_set,mytcav,f'name_{name}_rep_{current_repeat}', savefolder, target_class,
+                                      batching)
+    return
+
+
+def load_and_filter_pickles(directory, class_filter=None, batching_filter=None, repetition_filter=None,model_filter=None,name_filter=None):
+    # Step 1: Get all pickle files in the directory
+    pickle_files = [f for f in os.listdir(directory) if f.endswith('.pkl')]
+
+    # Step 2: Filter by tags (class_X, batching_X, repetition_X)
+    filtered_files = []
+    for file in pickle_files:
+        # Extract class, batching, and repetition from the filename
+        class_match = re.search(r'class_(\d+)', file)
+        batching_match = re.search(r'batching_(True|False)', file) #adapt filenames!! todo
+        repetition_match = re.search(r'rep_(\d+)', file)
+        model_match = re.search(r'model_(\d+)', file)
+        name_match = re.search(r'name_([^_]+)', file)
+
+        # Filter based on provided arguments
+        class_cond = class_filter is None or (class_match and int(class_match.group(1)) == class_filter)
+        batching_cond = batching_filter is None or (batching_match and batching_match.group(1) == str(batching_filter))
+        repetition_cond = repetition_filter is None or (
+                    repetition_match and int(repetition_match.group(1)) == repetition_filter)
+        model_cond = model_filter is None or (model_match and int(model_match.group(1)) == model_filter)
+        name_cond = name_filter is None or (name_match and name_match.group(1) == name_filter)
+
+        if class_cond and batching_cond and repetition_cond and model_cond and name_cond:
+            filtered_files.append(file)
+
+    all_tcav_scores=[]
+    for file in filtered_files:
+        with open(os.path.join(directory, file), 'rb') as f:
+            mean_scores = pickle.load(f)
+            all_tcav_scores.append(mean_scores)
+            #todo should be just one though!
+
+    return all_tcav_scores,filtered_files
+
 if __name__ == "__main__":
 
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:32'
+    import torch
+    import numpy as np
+    import random
+
+    # Set seeds for reproducibility
+    torch.manual_seed(0)
+    np.random.seed(0)
+    random.seed(0)
+
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:32' #todo can remove after all
 
     concepts_path = "/home/fkraehenbuehl/projects/SalCon/data/concepts"
 
@@ -457,19 +588,23 @@ if __name__ == "__main__":
     target_class=None
     batching=True
 
-    savefolder="./figures"
+    savefolder="./chexpert-figures"
+    if not os.path.exists(savefolder):
+        os.makedirs(savefolder)
 
-
+    #run absolute comparision
     repeat_nr = 3
-    for current_repeat in tqdm(range(repeat_nr),desc="repeating calculation n times"):
-
-        mytcav = TCAV(model=model,
-                      layers=layers,
-                      layer_attr_method=LayerIntegratedGradients(
-                          model, None, multiply_by_inputs=False), save_path=f"./cav-model-{modelnr}-repeat-{current_repeat}/")
-
-        run_TCAV_target_class_wrapper(experimental_set_rand, f"abs-{current_repeat}", savefolder, target_class, batching)
-        run_TCAV_target_class_wrapper(experimental_set_zig_dot, f"rel-{current_repeat}", savefolder, target_class, batching)
+    name=f"abs"
+    #run_repetition_wrapper(repeat_nr,experimental_set_rand,name) #todo disabled for debug
+    #run_repetition_wrapper(repeat_nr,experimental_set_zig_dot,name) #todo disabled for debug
 
 
-    #run_from_pickle()
+    name_filter = "abs"
+    batching_filter = False
+    model_filter = None
+    filename=f"gridplot_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
+    classes=5
+    repetitions=3
+    # Step 3: Load and calculate the average of scores
+    plot_tcav_scores_grid(experimental_set_rand, savefolder,layers, filename,batching_filter,model_filter,name_filter,classes,repetitions)
+
