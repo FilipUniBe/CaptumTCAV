@@ -45,6 +45,26 @@ def get_tensor_from_filename(filename):
     img = Image.open(filename).convert("RGB")
     return transform(img)
 
+def mean_score(tcav_scores_all_batches):
+    # Make a copy of the first tcav_scores dict
+    mean_scores = {exp_set: {layer: {score_type: torch.zeros_like(scores)
+                                     for score_type, scores in layer_scores.items()}
+                             for layer, layer_scores in exp_layers.items()}
+                   for exp_set, exp_layers in tcav_scores_all_batches[0].items()}
+    # Loop through the keys and get the values of the same keys from all_tcav_scores elements
+    for tcav_scores in tcav_scores_all_batches:
+        for experimental_set, layer_scores in tcav_scores.items():
+            for layer_name, scores in layer_scores.items():
+                for score_type, score_tensor in scores.items():
+                    mean_scores[experimental_set][layer_name][score_type] += score_tensor
+    # Divide the accumulated scores by the number of batches to compute the mean
+    num_batches = len(tcav_scores_all_batches)
+    for experimental_set, layer_scores in mean_scores.items():
+        for layer_name, scores in layer_scores.items():
+            for score_type in scores:
+                mean_scores[experimental_set][layer_name][score_type] /= num_batches
+
+    return mean_scores
 
 def load_image_tensors(class_name, root_path="data/tcav/image/concepts/", transform=True): #todo root_path adapted
     path = os.path.join(root_path, class_name)
@@ -97,6 +117,17 @@ def plot_tcav_scores(experimental_sets, tcav_scores,filename):
     plt.close()
     return
 
+def batch_data(tensor_data, batch_size):
+    """
+    Splits a tensor into batches of specified batch size.
+    Args:
+        tensor_data (Tensor): The tensor to be split into batches.
+        batch_size (int): The size of each batch.
+    Returns:
+        List of tensors where each tensor is a batch.
+    """
+    return [tensor_data[i:i + batch_size] for i in range(0, len(tensor_data), batch_size)]
+
 if __name__ == "__main__":
 
     concepts_path = "data/tcav/image/concepts/"
@@ -125,24 +156,50 @@ if __name__ == "__main__":
 
     # Load sample images from folder
     zebra_tensors = torch.stack([transform(img) for img in zebra_imgs])
-
     zebra_ind = 340
+    hippo_ind = 344
+    index_list=[zebra_ind,hippo_ind]
 
-    tcav_scores_w_random = mytcav.interpret(inputs=zebra_tensors,
-                                            experimental_sets=experimental_set_rand,
-                                            target=zebra_ind,
-                                            n_steps=5,
-                                            )
-    filename="absolute_TCAV.jpg"
-    plot_tcav_scores(experimental_set_rand, tcav_scores_w_random,filename)
+    repetition_nr=3
+    for repetition in range(repetition_nr):
 
-    experimental_set_zig_dot = [[stripes_concept, zigzagged_concept, dotted_concept]]
+        mytcav = TCAV(model=model,
+                      layers=layers,
+                      layer_attr_method=LayerIntegratedGradients(
+                          model, None, multiply_by_inputs=False),
+                      save_path=f"./cav-zebra-repeat-{repetition}/")
+        for indexes in index_list:
 
-    tcav_scores_w_zig_dot = mytcav.interpret(inputs=zebra_tensors,
-                                             experimental_sets=experimental_set_zig_dot,
-                                             target=zebra_ind,
-                                             n_steps=5)
-    filename = "relative_TCAV.jpg"
-    plot_tcav_scores(experimental_set_zig_dot, tcav_scores_w_zig_dot,filename)
+            # Specify batch size (adjust based on your system's memory capacity)
+            batch_size = 4  # Example batch size; modify according to your GPU memory limits
+            # Apply batching
+            batches = batch_data(zebra_tensors, batch_size)
+            # Initialize a list to store TCAV scores for all batches
+            all_tcav_scores = []
 
-    print("Script Finished")
+            # Iterate over each batch and run TCAV interpretation
+            for batch in batches:
+                tcav_scores_batch = mytcav.interpret(
+                    inputs=batch,
+                    experimental_sets=experimental_set_rand,
+                    target=indexes,
+                    n_steps=5
+                )
+                # Collect the results from each batch
+                all_tcav_scores.append(tcav_scores_batch)
+            tcav_scores_w_random=mean_score(all_tcav_scores)
+
+            filename=f"absolute_TCAV_batching_true_ind_{indexes}_repetition_{repetition}.jpg"
+
+            plot_tcav_scores(experimental_set_rand, tcav_scores_w_random,filename)
+
+            experimental_set_zig_dot = [[stripes_concept, zigzagged_concept, dotted_concept]]
+
+            tcav_scores_w_zig_dot = mytcav.interpret(inputs=zebra_tensors,
+                                                     experimental_sets=experimental_set_zig_dot,
+                                                     target=indexes,
+                                                     n_steps=5)
+            filename = f"relative_TCAV_batching_true_ind_{indexes}_repetition_{repetition}.jpg"
+            plot_tcav_scores(experimental_set_zig_dot, tcav_scores_w_zig_dot,filename)
+
+            print("Script Finished")

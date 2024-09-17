@@ -290,7 +290,7 @@ def assemble_concept(name, id, device,concepts_path="data/tcav/image/concepts/",
 def format_float(f):
     return float('{:.3f}'.format(f) if abs(f) >= 0.0005 else '{:.3e}'.format(f))
 
-def plot_tcav_scores(experimental_sets, tcav_scores,filename):
+def plot_tcav_scores(experimental_sets,savefolder, tcav_scores,filename):
     fig, ax = plt.subplots(1, len(experimental_sets), figsize = (25, 7))
 
     barWidth = 1 / (len(experimental_sets[0]) + 1)
@@ -316,9 +316,75 @@ def plot_tcav_scores(experimental_sets, tcav_scores,filename):
         # Create legend & Show graphic
         _ax.legend(fontsize=16)
 
-    plt.savefig(filename)
+    fullpath=os.path.join(savefolder,filename)
+    plt.savefig(fullpath)
     plt.close()
     return
+
+def mean_score(tcav_scores_all_batches):
+    # Make a copy of the first tcav_scores dict
+    mean_scores = {exp_set: {layer: {score_type: torch.zeros_like(scores)
+                                     for score_type, scores in layer_scores.items()}
+                             for layer, layer_scores in exp_layers.items()}
+                   for exp_set, exp_layers in tcav_scores_all_batches[0].items()}
+    # Loop through the keys and get the values of the same keys from all_tcav_scores elements
+    for tcav_scores in tcav_scores_all_batches:
+        for experimental_set, layer_scores in tcav_scores.items():
+            for layer_name, scores in layer_scores.items():
+                for score_type, score_tensor in scores.items():
+                    mean_scores[experimental_set][layer_name][score_type] += score_tensor
+    # Divide the accumulated scores by the number of batches to compute the mean
+    num_batches = len(tcav_scores_all_batches)
+    for experimental_set, layer_scores in mean_scores.items():
+        for layer_name, scores in layer_scores.items():
+            for score_type in scores:
+                mean_scores[experimental_set][layer_name][score_type] /= num_batches
+
+    return mean_scores
+
+def BCOA_from_pickle():
+    target_class=3
+    pickle_file="/home/fkraehenbuehl/projects/SalCon/results/experiment_019_20240916-154625/combined_data.pkl"
+    with open(pickle_file, 'rb') as f:
+        combined_data = pickle.load(f)
+    tcav_score = combined_data['tcav_score']
+
+    filename=f"CheXpert_absolute_TCAV_class_{target_class}_model_{modelnr}_from_pickle.jpg"
+    plot_tcav_scores(experimental_set_rand, tcav_score, filename)
+    print("plotted")
+    print("finished")
+    return
+
+def run_TCAV_target_class_wrapper(experimental_set, name, savefolder, target_class=None, batching=True):
+    if target_class is None:
+        for target_class in range(5):
+            mean_scores=run_TCAV(target_class,experimental_set,batching)
+            filename = f"CheXpert_{name}_class_{target_class}_model_{modelnr}_batching_{batching}.jpg"
+            plot_tcav_scores(experimental_set,savefolder, mean_scores, filename)
+            print(f"saved {filename}")
+
+    else:
+        mean_scores = run_TCAV(target_class, experimental_set, batching)
+        filename = f"CheXpert_{name}_class_{target_class}_model_{modelnr}_batching_{batching}.jpg"
+        plot_tcav_scores(experimental_set,savefolder, mean_scores, filename)
+        print(f"saved {filename}")
+    return
+
+def run_TCAV(target_class,experimental_set,batching=True):
+
+    tcav_scores_all_batches=[]
+    for images, _, _ in tqdm(test_dataloader, desc="Loading images into memory"):
+        images=images.to(device)
+        tcav_scores_w_random = mytcav.interpret(inputs=images,
+                                                experimental_sets=experimental_set,
+                                                target=target_class,
+                                                n_steps=5,
+                                                )
+
+        tcav_scores_all_batches.append(tcav_scores_w_random)
+        if not batching:
+            break #stop after one batch
+    return mean_score(tcav_scores_all_batches)
 
 if __name__ == "__main__":
 
@@ -345,7 +411,7 @@ if __name__ == "__main__":
 
     BCoA_concept = assemble_concept(BCoA, 0, device,concepts_path=concepts_path)
     BCaA_concept = assemble_concept(BCaA, 3, device, concepts_path=concepts_path) #todo ID changed for pickle
-    MSign_concept = assemble_concept(MSign, 3, device,concepts_path=concepts_path) #todo ID changed for pickle
+    MSign_concept = assemble_concept(MSign, 4, device,concepts_path=concepts_path) #todo ID changed for pickle
     FIHOOF_concept = assemble_concept(FIHOOF, 6, device, concepts_path=concepts_path)
     AB_concept = assemble_concept(AB, 7, device, concepts_path=concepts_path)
     BO_concept = assemble_concept(BO, 8, device, concepts_path=concepts_path)
@@ -382,79 +448,28 @@ if __name__ == "__main__":
     "densenet121.features.denseblock3.denselayer24.conv2",
     "densenet121.features.denseblock4.denselayer16.conv2"]
 
-
-
-    mytcav = TCAV(model=model,
-                  layers=layers,
-                  layer_attr_method=LayerIntegratedGradients(
-                      model, None, multiply_by_inputs=False),save_path=f"./cav-model-{modelnr}/")
-
-    #experimental_set_rand = [[BCoA_concept, healthy_patches_concept], [BCoA_concept, random_patches_concept]]
-    experimental_set_rand = [[BCoA_concept, random_patches_concept], [BCoA_concept, healthy_patches_concept]] #todo changed for pickle
-
-
-    # Load sample images from folder
     # Load the dataloader
     test_dataloader = load_data(dataset_type="test")
 
-    print("starting tcav.interpret()")
+    experimental_set_rand = [[BCoA_concept, random_patches_concept], [BCoA_concept, healthy_patches_concept]]
+    experimental_set_zig_dot = [[BCoA_concept, BCaA_concept, MSign_concept]]
 
-    def BCOA():
-        for target_class in range(5):
-            print(target_class)
-            for images, _, _ in tqdm(test_dataloader, desc="Loading images into memory"):
-                images=images.to(device)
-                tcav_scores_w_random = mytcav.interpret(inputs=images,
-                                                        experimental_sets=experimental_set_rand,
-                                                        target=target_class,
-                                                        n_steps=5,
-                                                        )
-                break #stop after one batch
+    target_class=None
+    batching=True
 
-            filename=f"CheXpert_absolute_TCAV_class_{target_class}_model_{modelnr}.jpg"
-            plot_tcav_scores(experimental_set_rand, tcav_scores_w_random, filename)
-            print("plotted")
-            print("finished")
-        return
+    savefolder="./figures"
 
 
+    repeat_nr = 3
+    for current_repeat in tqdm(range(repeat_nr),desc="repeating calculation n times"):
 
-    #BCOA()
+        mytcav = TCAV(model=model,
+                      layers=layers,
+                      layer_attr_method=LayerIntegratedGradients(
+                          model, None, multiply_by_inputs=False), save_path=f"./cav-model-{modelnr}-repeat-{current_repeat}/")
+
+        run_TCAV_target_class_wrapper(experimental_set_rand, f"abs-{current_repeat}", savefolder, target_class, batching)
+        run_TCAV_target_class_wrapper(experimental_set_zig_dot, f"rel-{current_repeat}", savefolder, target_class, batching)
 
 
-    def BCOA_BCAA_MSIGN():
-        experimental_set_zig_dot = [[BCoA_concept, BCaA_concept, MSign_concept]]
-
-        target_class=4
-
-        for images, _, _ in tqdm(test_dataloader, desc="Loading images into memory"):
-            images = images.to(device)
-            tcav_scores_w_random = mytcav.interpret(inputs=images,
-                                                    experimental_sets=experimental_set_zig_dot,
-                                                    target=target_class,
-                                                    n_steps=5,
-                                                    )
-            break  # stop after one batch
-
-        filename = f"CheXpert_relative_TCAV_class_{target_class}_model_{modelnr}.jpg"
-        plot_tcav_scores(experimental_set_zig_dot, tcav_scores_w_random,filename)
-
-        print("Script Finished")
-        return
-
-    #BCOA_BCAA_MSIGN()
-
-    def BCOA_from_pickle():
-        target_class=3
-        pickle_file="/home/fkraehenbuehl/projects/SalCon/results/experiment_019_20240916-154625/combined_data.pkl"
-        with open(pickle_file, 'rb') as f:
-            combined_data = pickle.load(f)
-        tcav_score = combined_data['tcav_score']
-
-        filename=f"CheXpert_absolute_TCAV_class_{target_class}_model_{modelnr}_from_pickle.jpg"
-        plot_tcav_scores(experimental_set_rand, tcav_score, filename)
-        print("plotted")
-        print("finished")
-        return
-
-    BCOA_from_pickle()
+    #run_from_pickle()
