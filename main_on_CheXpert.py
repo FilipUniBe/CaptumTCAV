@@ -48,49 +48,52 @@ def plot_tcav_scores_grid(experimental_sets, savefolder,layers, filename,batchin
     repetitions_list = range(repetitions)
     layer_labels = generate_layer_labels(layers)
 
-    # Create the figure with a grid of subplots
-    fig, axs = plt.subplots(len(repetitions_list), len(classes_list), figsize=(20, 15))
+    for subset_idx,subset in enumerate(experimental_sets):
 
-    barWidth = 0.15  # Adjusted width to reduce overlap
-    spacing = 0.2  # Add spacing between groups of bars
+        # Create the figure with a grid of subplots
+        fig, axs = plt.subplots(len(repetitions_list), len(classes_list), figsize=(20, 15))
 
-    for idx_class, class_id in enumerate(classes_list):
-        for idx_rep, repetition in enumerate(repetitions_list):
+        barWidth = 0.15  # Adjusted width to reduce overlap
+        spacing = 0.2  # Add spacing between groups of bars
 
-            all_tcav_scores,_ = load_and_filter_pickles(savefolder, idx_class, batching_filter,
-                                                                      idx_rep, model_filter, name_filter)
-            relevant_scores=all_tcav_scores[0]#must be just one though
+        for idx_class, class_id in enumerate(classes_list):
+            for idx_rep, repetition in enumerate(repetitions_list):
 
-            _ax = axs[idx_rep, idx_class]  # Use appropriate subplot
+                all_tcav_scores,_ = load_and_filter_pickles(savefolder, idx_class, batching_filter,
+                                                                          idx_rep, model_filter, name_filter)
+                relevant_scores=all_tcav_scores[0]#must be just one though
 
-            # For each experimental set (concept), plot a bar for every layer
-            for idx_es, concepts in enumerate(experimental_sets):
-                concepts = experimental_sets[idx_es]
+                _ax = axs[idx_rep, idx_class]  # Use appropriate subplot
+
+                concepts = subset
                 concepts_key = concepts_to_str(concepts)
 
-                pos = np.arange(len(layers)) * (barWidth + spacing)
+                pos = np.arange(len(layers))  # Base position for bars
+                bar_positions = [pos + i * (barWidth + spacing) for i in range(len(concepts))]
+
                 for i in range(len(concepts)):
-                    adjusted_pos = pos + i * (barWidth + spacing)
+                    adjusted_pos = bar_positions[i]
                     val = [format_float(scores['sign_count'][i]) for layer, scores in relevant_scores[concepts_key].items()]
                     _ax.bar(adjusted_pos, val, width=barWidth, edgecolor='white', label=concepts[i].name)
 
-            # Add xticks on the middle of the group bars
-            _ax.set_title(f'Class {class_id}, Repetition {repetition}', fontsize=12)
-            _ax.set_xticks([r + 0.3 * barWidth for r in range(len(layers))])
-            _ax.set_xticklabels(layer_labels, fontsize=10)
-            _ax.set_xlabel('Layers')
+                # Add xticks on the middle of the group bars
+                _ax.set_title(f'Class {class_id}, Repetition {repetition}', fontsize=12)
+                _ax.set_xticks(pos + (len(concepts) - 1) * (barWidth + spacing) / 2)
+                _ax.set_xticklabels(layer_labels, fontsize=10)
+                _ax.set_xlabel('Layers')
 
-    # Add a single legend for all subplots
-    handles, labels = _ax.get_legend_handles_labels()
-    fig.legend(handles, labels, loc='upper center', ncol=len(experimental_sets), bbox_to_anchor=(0.5, 0.1),
-               bbox_transform=fig.transFigure, fontsize=10)
+        # Add a single legend for all subplots
+        handles, labels = _ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc='upper center', ncol=len(subset), bbox_to_anchor=(0.5, 0.1),
+                   bbox_transform=fig.transFigure, fontsize=10)
 
-    # Adjust layout and save the figure
-    plt.tight_layout()
-    fullpath = os.path.join(savefolder, filename)
-    plt.suptitle(f'TCAV Scores for {filename}', fontsize=16)
-    plt.savefig(fullpath)
-    plt.close()
+        # Adjust layout and save the figure
+        plt.tight_layout()
+        modified_filename=f'{filename}_subset_{subset_idx}'
+        fullpath = os.path.join(savefolder, modified_filename)
+        plt.suptitle(f'TCAV Scores for {modified_filename}', fontsize=16)
+        plt.savefig(fullpath)
+        plt.close()
 
     return
 
