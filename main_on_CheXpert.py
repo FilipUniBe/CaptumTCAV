@@ -35,6 +35,7 @@ from captum.concept._utils.common import concepts_to_str
 from tqdm import tqdm
 import string
 
+
 def generate_layer_labels(layers):
     alphabet = list(string.ascii_uppercase)  # A to Z
     if len(layers) > 26:
@@ -511,6 +512,98 @@ def load_and_filter_pickles(directory, class_filter=None, batching_filter=None, 
 
     return all_tcav_scores,filtered_files
 
+
+def calculate_mean_std(savefolder, layers, classes, repetitions, batching_filter, model_filter, name_filter, experimental_sets):
+
+
+
+    dict_of_stats={}
+    for subset_idx, subset in enumerate(experimental_sets):
+        dict_of_stats[subset_idx] = {}  # Initialize dictionary for this subset
+        concepts_key = concepts_to_str(subset)
+        for class_id in range(classes):
+            dict_of_stats[subset_idx][class_id] = {}  # Initialize dictionary for this class
+
+            for layer in layers:
+
+                dict_of_stats[subset_idx][class_id][layer] = {}  # Initialize dictionary for this class
+                for idx in range(2):
+                    dict_of_stats[subset_idx][class_id][layer][idx] = {}  # Initialize dictionary for this class
+                    values_list = []
+                    for repetition in range(repetitions):
+                        all_tcav_scores, _ = load_and_filter_pickles(savefolder, class_id, batching_filter, repetition,
+                                                                     model_filter, name_filter)
+                        relevant_scores = all_tcav_scores[0]  # Assuming there's just one set of scores
+
+                        # Extract values for the current layer and convert to numpy array
+                        values_list.append(relevant_scores[concepts_key][layer]['sign_count'][idx])
+                        values_list = [value.cpu() for value in values_list]
+
+                    means = np.mean(values_list, axis=0)
+                    std = np.std(values_list, axis=0)
+
+
+                    # Store results in the dictionary
+                    dict_of_stats[subset_idx][class_id][layer][idx] = {
+                        "means": means,
+                        "std": std
+                    }
+
+    return dict_of_stats
+
+
+def plot_tcav_scores_per_class(savefolder, filename, layers, dict_stats, experimental_sets):
+
+    classes_list=range(5)
+    num_classes=len(classes_list)
+
+    for subset_idx, subset in enumerate(experimental_sets):
+        fig, axs = plt.subplots(num_classes, 1, figsize=(15, 5 * num_classes), sharex=True)
+
+        barWidth = 0.15
+        spacing = 0.2  # Spacing between bars for different concepts
+        layer_positions = np.arange(len(layers))
+
+        for idx_class, class_id in enumerate(classes_list):
+            # Plot mean and std with error bars for each class
+
+            _ax = axs[idx_class]  # Use appropriate subplot
+            concepts=subset
+
+            for i in range(len(concepts)):
+
+                # Prepare positions for the bars of the current concept
+                adjusted_pos = layer_positions + i * barWidth  # Shift position for each concept
+
+                # Extract mean and std for this concept and class
+                means = []
+                stds = []
+                for layer in layers:
+                    # Extract mean and std for the current layer
+                    layer_stats = dict_stats.get(subset_idx, {}).get(class_id, {}).get(layer, {}).get(i, {})
+                    means.append(layer_stats.get('means', 0))
+                    stds.append(layer_stats.get('std', 0))
+
+                # Plot bars for each concept
+                _ax.bar(adjusted_pos, means, width=barWidth, yerr=stds, capsize=5,
+                       edgecolor='white', label=f'{concepts[i]}')
+
+            _ax.set_title(f'Class {class_id}', fontsize=14)
+            _ax.set_ylabel('Mean TCAV Score', fontsize=12)
+            _ax.set_xticks(layer_positions + (len(subset) - 1) * (barWidth + spacing) / 2)
+            _ax.set_xticklabels(layers, fontsize=10)
+            _ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(subset), fontsize=10)
+
+        fig.suptitle(f'TCAV Scores for Subset {subset_idx}', fontsize=16)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to fit suptitle
+
+        # Save the figure
+        fullpath = os.path.join(savefolder, f'{filename}_subset_{subset_idx}.png')
+        plt.savefig(fullpath)
+        plt.close()
+
+    return
+
 if __name__ == "__main__":
 
     import torch
@@ -608,6 +701,35 @@ if __name__ == "__main__":
     filename=f"gridplot_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
     classes=5
     repetitions=3
-    # Step 3: Load and calculate the average of scores
-    plot_tcav_scores_grid(experimental_set_rand, savefolder,layers, filename,batching_filter,model_filter,name_filter,classes,repetitions)
 
+    # plot gridplot for the repetitions
+    #plot_tcav_scores_grid(experimental_set_rand, savefolder,layers, filename,batching_filter,model_filter,name_filter,classes,repetitions)
+
+    repetition=None
+    score_type="sign_count"
+    dict_of_stats={}
+    for subset_idx, subset in enumerate(experimental_set_rand):
+        dict_of_stats[subset_idx]={}
+
+        for class_id in range(5):
+            dict_of_stats[subset_idx][class_id]={}
+            all_tcav_scores, _ = load_and_filter_pickles(savefolder, class_id, batching_filter, repetition,
+                                                         model_filter, name_filter)
+
+            for score_layer in layers:
+                dict_of_stats[subset_idx][class_id][score_layer]={}
+                for idx in range(2):
+                    dict_of_stats[subset_idx][class_id][score_layer][idx] = {}  # Initialize dictionary for this class
+                    score_list=[]
+                    for tcav_score in all_tcav_scores:
+                        score_list.append(tcav_score["-".join([str(c.id) for c in subset])][score_layer][score_type][idx])
+                    score_list = [value.cpu() for value in score_list]
+                    means = np.mean(score_list, axis=0)
+                    std = np.std(score_list, axis=0)
+                    dict_of_stats[subset_idx][class_id][score_layer][idx]={"means": means, "std":std}
+
+    filename=f"meanplot_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
+    plot_tcav_scores_per_class(savefolder, filename, layers, dict_of_stats,
+                               experimental_set_rand)
+
+    print("ran trough script")
