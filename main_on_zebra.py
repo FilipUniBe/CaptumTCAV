@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from PIL import Image
 
-from scipy.stats import ttest_ind
+from scipy.stats import ttest_ind, stats, ttest_ind_from_stats
 
 # ..........torch imports............
 import torch
@@ -30,6 +30,15 @@ from captum.concept._utils.data_iterator import dataset_to_dataloader, CustomIte
 from captum.concept._utils.common import concepts_to_str
 from tqdm import tqdm
 
+def get_model_size(model):
+    # Calculate the total number of parameters
+    total_params = sum(p.numel() for p in model.parameters())
+
+    # Assuming parameters are stored as float32 (4 bytes each)
+    param_size_in_bytes = total_params * 4
+    param_size_in_MB = param_size_in_bytes / (1024 ** 2)  # Convert to megabytes (MB)
+
+    return param_size_in_MB
 
 # Method to normalize an image to Imagenet mean and standard deviation
 def transform(img):
@@ -266,10 +275,10 @@ def get_dict_of_stats(experimental_set_rand,layers,all_tcav_scores,classlist):
     return dict_of_stats, num_elements
 
 
-def plot_abs(dict_stats, experimental_sets, pathname, num_elements, filename,layers,class_id):
+def plot_abs(dict_stats, experimental_sets, pathname, num_elements, filename,layers,class_id,batching_Flag):
 
 
-    fig, axs = plt.subplots(1, 2, figsize=(30, 7))  # Two subplots side-by-side
+    fig, axs = plt.subplots(1, 2, figsize=(20, 7))  # Two subplots side-by-side
 
     barWidth = 0.15
     spacing = 0.2  # Spacing between bars for different concepts
@@ -295,15 +304,27 @@ def plot_abs(dict_stats, experimental_sets, pathname, num_elements, filename,lay
                 stds.append(layer_stats.get('std', 0))
 
             # Plot bars for each concept
-            ax.bar(adjusted_pos, means, width=barWidth, yerr=stds, capsize=5,
-                   edgecolor='white', label=f'{concepts[i]}')
+            bars=ax.bar(adjusted_pos, means, width=barWidth, yerr=stds, capsize=5,
+                   edgecolor='white', label=f'{concepts[i].name}')
+
+            # Add value labels with mean and +/- std on top of the bars
+            for bar, mean, std in zip(bars, means, stds):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width() / 2.0, height, f'{mean:.2f} (± {std:.2f})',
+                        ha='center', va='bottom', fontsize=10, color='black')
 
         # Setting plot details
-        ax.set_title(f'TCAV Scores for Subset {idx_es} random: {num_elements}', fontsize=16)
+        if batching_Flag=='batching_True': batching_Flag=True #todo ugly
+        elif batching_Flag=='batching_False': batching_Flag=False
+        ax.set_title(f'TCAV Scores for Subset {idx_es} - repetitions: {num_elements} - class: {class_id} - batching: {batching_Flag}', fontsize=16)
         ax.set_ylabel('Mean TCAV Score', fontsize=12)
         ax.set_xticks(layer_positions + (len(concepts) - 1) * (barWidth + spacing) / 2)
         ax.set_xticklabels(layers, fontsize=10)
         ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(concepts), fontsize=10)
+
+    # Synchronize y-axis across all subplots
+    for ax in axs:
+        ax.set_ylim([0, 1])
 
     # Adjust layout to fit the title
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
@@ -345,6 +366,9 @@ if __name__ == "__main__":
     model = torchvision.models.googlenet(pretrained=True)
     model = model.eval()
 
+    model_size = get_model_size(model)
+    print(f"Model size: {model_size:.2f} MB")
+
     #define layers
     layers = ['inception4c', 'inception4d', 'inception4e']
 
@@ -374,12 +398,31 @@ if __name__ == "__main__":
         os.makedirs(pathname)
 
     # define parameters
-    repetition_nr=10
+    repetition_nr=50
     batch_size=4
 
+
+    #pristine TCAV
+
+    mytcav = TCAV(model=model,
+                  layers=layers,
+                  layer_attr_method=LayerIntegratedGradients(
+                      model, None, multiply_by_inputs=False))
+    tcav_scores_w_random = mytcav.interpret(inputs=zebra_tensors,
+                                            experimental_sets=experimental_set_rand,
+                                            target=zebra_ind,
+                                            n_steps=5,
+                                            )
+    filename="pristine_tcav_plot"
+    pathname=pathname
+    print(f'tcav_scores_w_random: {tcav_scores_w_random}')
+    plot_tcav_scores(experimental_set_rand, tcav_scores_w_random, filename, pathname)
+
     # calculate and plot individual TCAVs
-    #calculate_tcav("absolute",experimental_set_rand,picklefolder,pathname,repetition_nr,index_list,batch_size)
-    #calculate_tcav("relative", experimental_set_zig_dot,picklefolder,pathname,repetition_nr,index_list,batch_size) #todo deactivated for debug
+    debug=True  #todo deactivated for debug, because takes long
+    if debug==False:
+        calculate_tcav("absolute",experimental_set_rand,picklefolder,pathname,repetition_nr,index_list,batch_size)
+        calculate_tcav("relative", experimental_set_zig_dot,picklefolder,pathname,repetition_nr,index_list,batch_size) #todo deactivated for debug
 
     # group pickles by absolute, relative, batching=True, batching=False
     grouped_files = group_pickle_files(picklefolder)
@@ -389,13 +432,50 @@ if __name__ == "__main__":
     batching_Flag = ['batching_True', 'batching_False']
     combinations = list(itertools.product(experiment_pair, batching_Flag,index_list))
 
+    dict_of_mean = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))))
     for experiment_pair, batching_Flag,class_id in combinations:
         name_flag, experimental_set = experiment_pair
         filename = f'{name_flag}_{batching_Flag}_class_{class_id}'
         subset = grouped_files[name_flag][batching_Flag][class_id]
         all_tcav_scores = pickle_to_cpu(subset,picklefolder)
         dict_of_stats, num_elements = get_dict_of_stats(experimental_set, layers, all_tcav_scores, index_list)
-        plot_abs(dict_of_stats, experimental_set, pathname, num_elements, filename,layers,class_id)
+        plot_abs(dict_of_stats, experimental_set, pathname, num_elements, filename,layers,class_id,batching_Flag)
+
+
+        score_type="sign_count"
+        for idx_es, concepts in enumerate(experimental_set):
+            for i in range(len(concepts)):
+                # Extract mean and std for this concept
+                means = []
+                stds = []
+                for layer in layers:
+                    # Extract mean and std for the current layer
+                    layer_stats = dict_of_stats.get(idx_es, {}).get(layer, {}).get(score_type, {}).get(i, {})
+                    current_mean=(layer_stats.get('means', 0))
+                    current_std=(layer_stats.get('std', 0))
+                    dict_of_mean[name_flag][concepts[i].name][layer][class_id][batching_Flag] = {"mean": current_mean, "std": current_std}
+
+
+    for layer in layers:
+        for cname in ["striped","random_0","random_1"]:
+            class_id=zebra_ind
+            mean1=dict_of_mean["absolute"][cname][layer][class_id]['batching_True']['mean']
+            std1=dict_of_mean["absolute"][cname][layer][class_id]['batching_True']['std']
+            n1=num_elements
+            mean2=dict_of_mean["absolute"][cname][layer][class_id]['batching_False']['mean']
+            std2=dict_of_mean["absolute"][cname][layer][class_id]['batching_False']['std']
+            n2=num_elements
+            _, p_value = ttest_ind_from_stats(mean1,std1,n1,mean2,std2,n2, equal_var=True, alternative='two-sided')
+            print(f'layer: {layer}')
+            print(f'concept: {cname}')
+            print(f"P-value: {p_value}")
+            alpha=0.05
+            if p_value < alpha:
+                print("statistically significant")
+            else:
+                print("statistically insignificant")
+
+
 
 
 
