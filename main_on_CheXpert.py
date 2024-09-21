@@ -532,7 +532,9 @@ def plot_tcav_scores_per_class_mean(savefolder, filename, layers, dict_stats, ex
     num_classes = len(classes_list)
 
     for subset_idx, subset in enumerate(experimental_sets):
-        fig, axs = plt.subplots(num_classes, 1, figsize=(15, 5 * num_classes), sharex=True)
+        #fig, axs = plt.subplots(num_classes, 1, figsize=(15, 5 * num_classes), sharex=True)
+        # Create a figure for all classes
+        fig_all_classes, axs_all = plt.subplots(num_classes, 1, figsize=(15, 5 * num_classes), sharex=True)
 
         barWidth = 0.15
         spacing = 0.2  # Spacing between bars for different concepts
@@ -541,7 +543,8 @@ def plot_tcav_scores_per_class_mean(savefolder, filename, layers, dict_stats, ex
         for idx_class, class_id in enumerate(classes_list):
             # Plot mean and std with error bars for each class
 
-            _ax = axs[idx_class]  # Use appropriate subplot
+            fig, ax = plt.subplots(figsize=(15, 5))
+
             concepts = subset
 
             for i in range(len(concepts)):
@@ -559,22 +562,48 @@ def plot_tcav_scores_per_class_mean(savefolder, filename, layers, dict_stats, ex
                     stds.append(layer_stats.get('std', 0))
 
                 # Plot bars for each concept
-                _ax.bar(adjusted_pos, means, width=barWidth, yerr=stds, capsize=5,
+                bars=ax.bar(adjusted_pos, means, width=barWidth, yerr=stds, capsize=5,
                         edgecolor='white', label=f'{concepts[i]}')
+                # Plot on all classes subplot
+                axs_all[idx_class].bar(adjusted_pos, means, width=barWidth, yerr=stds, capsize=5,
+                                       edgecolor='white', label=f'{concepts[i]}')
 
-            _ax.set_title(f'Class {class_id}', fontsize=14)
-            _ax.set_ylabel('Mean TCAV Score', fontsize=12)
-            _ax.set_xticks(layer_positions + (len(subset) - 1) * (barWidth + spacing) / 2)
-            _ax.set_xticklabels(layers, fontsize=10)
-            _ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(subset), fontsize=10)
+                # Add value labels with mean and +/- std on top of the bars
+                for bar, mean, std in zip(bars, means, stds):
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width() / 2.0, height, f'{mean:.2f} (± {std:.2f})',
+                            ha='center', va='bottom', fontsize=10, color='black')
+                    axs_all[idx_class].text(bar.get_x() + bar.get_width() / 2.0, height, f'{mean:.2f} (± {std:.2f})',
+                            ha='center', va='bottom', fontsize=10, color='black')
 
-        fig.suptitle(f'TCAV Scores for Subset {subset_idx} repeated for: {num_elements}', fontsize=16)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to fit suptitle
+            ax.set_title(f'Class {class_id}', fontsize=14)
+            ax.set_ylabel('Mean TCAV Score', fontsize=12)
+            ax.set_xticks(layer_positions + (len(subset) - 1) * (barWidth + spacing) / 2)
+            layerlabels= [layer.replace("densenet121.features.","") for layer in layers]
+            ax.set_xticklabels(layerlabels, fontsize=10)
+            ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(subset), fontsize=10)
 
-        # Save the figure
-        fullpath = os.path.join(savefolder, f'{filename}_subset_{subset_idx}.png')
-        plt.savefig(fullpath)
-        plt.close()
+            #save individual figure
+            # Save individual class figure
+            fullpath_class = os.path.join(savefolder, f'{filename}_class_{class_id}_subset_{subset_idx}.png')
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+            plt.savefig(fullpath_class)
+            plt.close(fig)
+
+        # Setup for the all-classes plot
+        for idx_class in range(num_classes):
+            axs_all[idx_class].set_title(f'TCAV Scores for Class {idx_class}', fontsize=14)
+            axs_all[idx_class].set_ylabel('Mean TCAV Score', fontsize=12)
+            axs_all[idx_class].set_xticks(layer_positions + (len(subset) - 1) * (barWidth + spacing) / 2)
+            layerlabels = [layer.replace("densenet121.features.", "") for layer in layers]
+            axs_all[idx_class].set_xticklabels(layerlabels, fontsize=10)
+            axs_all[idx_class].legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(subset), fontsize=10)
+
+        # Save the all-classes figure
+        fullpath_all_classes = os.path.join(savefolder, f'{filename}_all_classes_subset_{subset_idx}.png')
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.savefig(fullpath_all_classes)
+        plt.close(fig_all_classes)
 
     return
 
@@ -584,7 +613,7 @@ def plot_tcav_scores_per_class_median(savefolder, filename, layers, dict_stats, 
     num_classes=len(classes_list)
 
     for subset_idx, subset in enumerate(experimental_sets):
-        fig, axs = plt.subplots(num_classes, 1, figsize=(15, 5 * num_classes), sharex=True)
+        fig_all_classes, axs_all = plt.subplots(num_classes, 1, figsize=(15, 5 * num_classes), sharex=True)
 
         barWidth = 0.15
         spacing = 0.2  # Spacing between bars for different concepts
@@ -593,7 +622,7 @@ def plot_tcav_scores_per_class_median(savefolder, filename, layers, dict_stats, 
         for idx_class, class_id in enumerate(classes_list):
             # Plot mean and std with error bars for each class
 
-            _ax = axs[idx_class]  # Use appropriate subplot
+            fig, ax = plt.subplots(figsize=(15, 5))
             concepts=subset
 
             for i in range(len(concepts)):
@@ -633,14 +662,21 @@ def plot_tcav_scores_per_class_median(savefolder, filename, layers, dict_stats, 
                     upper_errors.append(upper_error)
 
                 # Plot bars for each concept
-                bars=_ax.bar(adjusted_pos, medians, width=barWidth, yerr=[lower_errors, upper_errors], capsize=5,
+                bars=ax.bar(adjusted_pos, medians, width=barWidth, yerr=[lower_errors, upper_errors], capsize=5,
                        edgecolor='white', label=f'{concepts[i]}')
+
+                # Plot on all classes subplot
+                axs_all[idx_class].bar(adjusted_pos, medians, width=barWidth, yerr=[lower_errors, upper_errors],
+                                       capsize=5, edgecolor='white', label=f'{concepts[i]}')
 
                 # Add value labels with mean and +/- std on top of the bars
                 for bar, median, lower_error, upper_error in zip(bars, medians, lower_errors, upper_errors):
                     height = bar.get_height()
-                    _ax.text(bar.get_x() + bar.get_width() / 2.0, height, f'{median:.2f} (+ {upper_error:.2f} - {lower_error:.2f})',
+                    ax.text(bar.get_x() + bar.get_width() / 2.0, height, f'{median:.2f} (+ {upper_error:.2f} - {lower_error:.2f})',
                             ha='center', va='bottom', fontsize=10, color='black')
+                    axs_all[idx_class].text(bar.get_x() + bar.get_width() / 2.0, height,
+                                            f'{median:.2f} (q3: {upper_error:.2f}, q1: {lower_error:.2f})',
+                                            ha='center', va='bottom', fontsize=10, color='black')
 
 
                 if i==0:
@@ -669,20 +705,30 @@ def plot_tcav_scores_per_class_median(savefolder, filename, layers, dict_stats, 
                     print(f'p-value: {p_val}')
                     print("statistically insignificant")
 
+            ax.set_title(f'Class {class_id}', fontsize=14)
+            ax.set_ylabel('Median TCAV Score', fontsize=12)
+            ax.set_xticks(layer_positions + (len(subset) - 1) * (barWidth + spacing) / 2)
+            ax.set_xticklabels(layers, fontsize=10)
+            ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(subset), fontsize=10)
 
-            _ax.set_title(f'Class {class_id}', fontsize=14)
-            _ax.set_ylabel('Median TCAV Score', fontsize=12)
-            _ax.set_xticks(layer_positions + (len(subset) - 1) * (barWidth + spacing) / 2)
-            _ax.set_xticklabels(layers, fontsize=10)
-            _ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(subset), fontsize=10)
+            # Save individual class figure
+            fullpath_class = os.path.join(savefolder, f'{filename}_class_{class_id}_subset_{subset_idx}.png')
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+            plt.savefig(fullpath_class)
+            plt.close(fig)
 
-        fig.suptitle(f'TCAV Scores for Subset {subset_idx} repeated for: {num_elements}', fontsize=16)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to fit suptitle
+            # Setup for the all-classes plot
+            axs_all[idx_class].set_title(f'TCAV Scores for Class {idx_class}', fontsize=14)
+            axs_all[idx_class].set_ylabel('Median TCAV Score', fontsize=12)
+            axs_all[idx_class].set_xticks(layer_positions + (len(subset) - 1) * (barWidth + spacing) / 2)
+            axs_all[idx_class].set_xticklabels(layers, fontsize=10)
+            axs_all[idx_class].legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(subset), fontsize=10)
 
-        # Save the figure
-        fullpath = os.path.join(savefolder, f'median_{filename}_subset_{subset_idx}.png')
-        plt.savefig(fullpath)
-        plt.close()
+        # Save the all-classes figure
+        fullpath_all_classes = os.path.join(savefolder, f'{filename}_all_classes_subset_{subset_idx}.png')
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.savefig(fullpath_all_classes)
+        plt.close(fig_all_classes)
 
     return
 
@@ -1115,6 +1161,7 @@ if __name__ == "__main__":
     filename=f"meanplot_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
     plot_tcav_scores_per_class_mean(figurefolder, filename, layers, dict_of_stats,
                                experimental_set_rand, num_elements)
+    filename = f"medianplot_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
     plot_tcav_scores_per_class_median(figurefolder, filename, layers, dict_of_stats,
                                experimental_set_rand,num_elements)
 
