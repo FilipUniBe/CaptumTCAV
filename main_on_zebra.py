@@ -1,4 +1,5 @@
 #conda install pytorch torchvision torchaudio cudatoolkit=11.8 -c pytorch
+import math
 import pickle
 from collections import defaultdict
 
@@ -6,12 +7,14 @@ import numpy as np
 import os, glob
 import re
 import itertools
+import statsmodels.api as sm
 
 import matplotlib.pyplot as plt
 
 from PIL import Image
 
-from scipy.stats import ttest_ind, stats, ttest_ind_from_stats
+from scipy.stats import ttest_ind, ttest_ind_from_stats
+from scipy import stats
 
 # ..........torch imports............
 import torch
@@ -271,6 +274,8 @@ def get_dict_of_stats(experimental_set_rand,layers,all_tcav_scores,classlist):
                 std = np.std(score_list, axis=0)
 
                 dict_of_stats[subset_idx][score_layer][score_type][idx] = {"means": means, "std": std}
+                vals = [val.item() for val in score_list]
+                dict_of_stats[subset_idx][score_layer][score_type][idx]["vals"] = vals
 
     return dict_of_stats, num_elements
 
@@ -347,6 +352,72 @@ def pickle_to_cpu(picklefiles,picklefolder):
                         layers[modus_key] = modus.cpu()
             torch.cuda.empty_cache()
     return all_tcav_scores
+
+def plot_q_q(all_dicts, experimental_sets, pathname, num_elements, filename, layers, class_id, batching_Flag,combinations):
+
+    num_sets = len(experimental_sets)
+    concepts = [0, 1]  # Assuming two concepts
+    score_type="sign_count"
+
+    # Total grid size based on batching (2), classes (variable), and experimental sets (num_sets)
+    num_layer = len(layers)  # Total number of classes
+    fig, axs = plt.subplots(num_sets*2,num_layer, figsize=(15, 15), sharex=True, sharey=True)
+
+    for combination, one_dict in zip(combinations,all_dicts):
+        experiment_pair, batching_Flag, class_id = combination
+        name_flag, experimental_set = experiment_pair
+
+        if "relative" in name_flag:
+            continue
+        for idx_es, subset in enumerate(experimental_sets):  # Horizontal: experimental sets
+
+            # Plot Q-Q plot for each concept (on the same axis)
+            for concept_idx,concept in enumerate(subset):
+                # Get values from the dictionary for the current experimental set, batching, and class
+                row_idx = idx_es * len(subset) + concept_idx
+
+                for idx_layer, layer in enumerate(layers):
+                    column_idx=idx_layer
+                    ax = axs[row_idx, column_idx]  # Select correct subplot
+
+                    # Clear the axis before plotting to prevent multiple rows of points
+                    ax.cla()
+
+                    layer_stats = one_dict.get(idx_es, {}).get(layer, {}).get(score_type, {}).get(concept_idx, {})
+                    vals=layer_stats["vals"]
+
+                    if vals is None:
+                        print("vals empty")
+                    if len(vals)==0:
+                        print("vals of 0 lenght")
+
+                    # Plot the Q-Q plot for each concept
+                    vals=np.array(vals)
+                    #bins=len(vals)
+                    bins=math.ceil(math.sqrt(len(vals)))
+                    ax.hist(vals, bins=bins, alpha=0.7,range=[0,1])#,density=True)
+                    #sm.qqplot(vals, line='45',ax=ax)
+
+
+                    # Set axis labels only for bottom-left plots for clarity
+                    if row_idx == num_layer - 1:
+                        ax.set_xlabel(f'Layer {layer}')
+                    if column_idx == 0:
+                        ax.set_ylabel(f'Subset {idx_es}, Concept {concept_idx}')
+
+
+            # Set overall figure title and adjust layout
+        fig.suptitle(f'Histogram for class {class_id} batch {batching_Flag} ', fontsize=16)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+        # Save the figure
+        fullpath = os.path.join(pathname, f'histogram for class {class_id} batch {batching_Flag}.png')
+        fig.savefig(fullpath)
+        plt.close()
+
+    return
+
+
 
 if __name__ == "__main__":
 
@@ -432,6 +503,7 @@ if __name__ == "__main__":
     batching_Flag = ['batching_True', 'batching_False']
     combinations = list(itertools.product(experiment_pair, batching_Flag,index_list))
 
+    all_dicts=[]
     dict_of_mean = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))))
     for experiment_pair, batching_Flag,class_id in combinations:
         name_flag, experimental_set = experiment_pair
@@ -440,6 +512,7 @@ if __name__ == "__main__":
         all_tcav_scores = pickle_to_cpu(subset,picklefolder)
         dict_of_stats, num_elements = get_dict_of_stats(experimental_set, layers, all_tcav_scores, index_list)
         plot_abs(dict_of_stats, experimental_set, pathname, num_elements, filename,layers,class_id,batching_Flag)
+        all_dicts.append(dict_of_stats)
 
 
         score_type="sign_count"
@@ -475,7 +548,7 @@ if __name__ == "__main__":
             else:
                 print("statistically insignificant")
 
-
+    plot_q_q(all_dicts, experimental_set_rand, pathname, num_elements, filename, layers, class_id, batching_Flag,combinations)
 
 
 
