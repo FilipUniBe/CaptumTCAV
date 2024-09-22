@@ -359,9 +359,12 @@ def plot_q_q(all_dicts, experimental_sets, pathname, num_elements, filename, lay
     concepts = [0, 1]  # Assuming two concepts
     score_type="sign_count"
 
+    colors = ['blue', 'orange']  # Use different colors for each concept
+    alphas = [0.6, 0.6]  # Set transparency for histograms
+
     # Total grid size based on batching (2), classes (variable), and experimental sets (num_sets)
     num_layer = len(layers)  # Total number of classes
-    fig, axs = plt.subplots(num_sets*2,num_layer, figsize=(15, 15), sharex=True, sharey=True)
+    fig, axs = plt.subplots(num_sets,num_layer, figsize=(15, 15), sharex=True, sharey=True)
 
     for combination, one_dict in zip(combinations,all_dicts):
         experiment_pair, batching_Flag, class_id = combination
@@ -371,17 +374,15 @@ def plot_q_q(all_dicts, experimental_sets, pathname, num_elements, filename, lay
             continue
         for idx_es, subset in enumerate(experimental_sets):  # Horizontal: experimental sets
 
-            # Plot Q-Q plot for each concept (on the same axis)
-            for concept_idx,concept in enumerate(subset):
-                # Get values from the dictionary for the current experimental set, batching, and class
-                row_idx = idx_es * len(subset) + concept_idx
+            for idx_layer, layer in enumerate(layers):
+                ax = axs[idx_es, idx_layer]  # Select correct subplot
 
-                for idx_layer, layer in enumerate(layers):
-                    column_idx=idx_layer
-                    ax = axs[row_idx, column_idx]  # Select correct subplot
+                # Clear the axis before plotting to prevent multiple rows of points
+                ax.cla()
 
-                    # Clear the axis before plotting to prevent multiple rows of points
-                    ax.cla()
+                # Plot Q-Q plot for each concept (on the same axis)
+                for concept_idx, concept in enumerate(subset):
+                    # Get values from the dictionary for the current experimental set, batching, and class
 
                     layer_stats = one_dict.get(idx_es, {}).get(layer, {}).get(score_type, {}).get(concept_idx, {})
                     vals=layer_stats["vals"]
@@ -395,15 +396,17 @@ def plot_q_q(all_dicts, experimental_sets, pathname, num_elements, filename, lay
                     vals=np.array(vals)
                     #bins=len(vals)
                     bins=math.ceil(math.sqrt(len(vals)))
-                    ax.hist(vals, bins=bins, alpha=0.7,range=[0,1])#,density=True)
+                    ax.hist(vals, bins=bins,range=[0,1],alpha=alphas[concept_idx], color=colors[concept_idx],label=f'Concept {concept_idx}')#,density=True)
                     #sm.qqplot(vals, line='45',ax=ax)
 
-
-                    # Set axis labels only for bottom-left plots for clarity
-                    if row_idx == num_layer - 1:
+                    # Set axis labels only for bottom plots for clarity
+                    if idx_es == num_sets - 1:
                         ax.set_xlabel(f'Layer {layer}')
-                    if column_idx == 0:
-                        ax.set_ylabel(f'Subset {idx_es}, Concept {concept_idx}')
+                    if idx_layer == 0:
+                        ax.set_ylabel(f'Subset {idx_es}')
+
+                    # Add legend to distinguish between concepts
+                    ax.legend(loc='upper right')
 
 
             # Set overall figure title and adjust layout
@@ -504,7 +507,7 @@ if __name__ == "__main__":
     combinations = list(itertools.product(experiment_pair, batching_Flag,index_list))
 
     all_dicts=[]
-    dict_of_mean = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))))
+    dict_of_mean = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict))))))
     for experiment_pair, batching_Flag,class_id in combinations:
         name_flag, experimental_set = experiment_pair
         filename = f'{name_flag}_{batching_Flag}_class_{class_id}'
@@ -526,27 +529,42 @@ if __name__ == "__main__":
                     layer_stats = dict_of_stats.get(idx_es, {}).get(layer, {}).get(score_type, {}).get(i, {})
                     current_mean=(layer_stats.get('means', 0))
                     current_std=(layer_stats.get('std', 0))
-                    dict_of_mean[name_flag][concepts[i].name][layer][class_id][batching_Flag] = {"mean": current_mean, "std": current_std}
+                    dict_of_mean[name_flag][idx_es][i][layer][class_id][batching_Flag] = {"mean": current_mean, "std": current_std}
 
 
     for layer in layers:
-        for cname in ["striped","random_0","random_1"]:
-            class_id=zebra_ind
-            mean1=dict_of_mean["absolute"][cname][layer][class_id]['batching_True']['mean']
-            std1=dict_of_mean["absolute"][cname][layer][class_id]['batching_True']['std']
-            n1=num_elements
-            mean2=dict_of_mean["absolute"][cname][layer][class_id]['batching_False']['mean']
-            std2=dict_of_mean["absolute"][cname][layer][class_id]['batching_False']['std']
-            n2=num_elements
-            _, p_value = ttest_ind_from_stats(mean1,std1,n1,mean2,std2,n2, equal_var=True, alternative='two-sided')
-            print(f'layer: {layer}')
-            print(f'concept: {cname}')
-            print(f"P-value: {p_value}")
-            alpha=0.05
-            if p_value < alpha:
-                print("statistically significant")
-            else:
-                print("statistically insignificant")
+        for idx_es, concepts in enumerate(experimental_set_rand):
+            for i in range(2):
+                class_id=zebra_ind
+                mean1=dict_of_mean["absolute"][idx_es][i][layer][class_id]['batching_True']['mean']
+                std1=dict_of_mean["absolute"][idx_es][i][layer][class_id]['batching_True']['std']
+                n1=num_elements
+                print(f"n1: {n1}")
+                mean2=dict_of_mean["absolute"][idx_es][i][layer][class_id]['batching_False']['mean']
+                std2=dict_of_mean["absolute"][idx_es][i][layer][class_id]['batching_False']['std']
+                n2=num_elements
+                print(f"n2: {n2}")
+                _, p_val = ttest_ind_from_stats(mean1,std1,n1,mean2,std2,n2, equal_var=True, alternative='two-sided')
+                print(f'layer: {layer}')
+                print(f'set: {[idx_es]}')
+                print(f'concept: {i}')
+
+                print(f'mean1 {mean1}')
+                print(f'mean2 {mean2}')
+                print(f'std1 {std1}')
+                print(f'std2 {std2}')
+                print(f"P-value: {p_val}")
+                alpha=0.05
+                if p_val < 0.001:
+                    print(f'p-value: P < .001')
+                elif p_val < 0.01:
+                    print(f'p-value: P = {p_val:.3f}')
+                else:
+                    print(f'p-value: P = {p_val:.2f}')
+                if p_val < alpha:
+                    print("statistically significant")
+                else:
+                    print("statistically insignificant")
 
     plot_q_q(all_dicts, experimental_set_rand, pathname, num_elements, filename, layers, class_id, batching_Flag,combinations)
 
