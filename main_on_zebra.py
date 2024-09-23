@@ -364,7 +364,7 @@ def plot_q_q(all_dicts, experimental_sets, pathname, num_elements, filename, lay
 
     # Total grid size based on batching (2), classes (variable), and experimental sets (num_sets)
     num_layer = len(layers)  # Total number of classes
-    fig, axs = plt.subplots(num_sets,num_layer, figsize=(15, 15), sharex=True, sharey=True)
+
 
     for combination, one_dict in zip(combinations,all_dicts):
         experiment_pair, batching_Flag, class_id = combination
@@ -374,11 +374,15 @@ def plot_q_q(all_dicts, experimental_sets, pathname, num_elements, filename, lay
             continue
         for idx_es, subset in enumerate(experimental_sets):  # Horizontal: experimental sets
 
+            fig, axs = plt.subplots(1, num_layer, figsize=(15, 5), sharex=True, sharey=True)
             for idx_layer, layer in enumerate(layers):
-                ax = axs[idx_es, idx_layer]  # Select correct subplot
+                ax = axs[idx_layer]  # Select correct subplot
 
-                # Clear the axis before plotting to prevent multiple rows of points
-                ax.cla()
+
+                # Set fixed y-axis limits
+                ax.set_ylim(0, 50)
+
+                ax.set_xlim(0,1)
 
                 # Plot Q-Q plot for each concept (on the same axis)
                 for concept_idx, concept in enumerate(subset):
@@ -409,14 +413,15 @@ def plot_q_q(all_dicts, experimental_sets, pathname, num_elements, filename, lay
                     ax.legend(loc='upper right')
 
 
-            # Set overall figure title and adjust layout
-        fig.suptitle(f'Histogram for class {class_id} batch {batching_Flag} ', fontsize=16)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
-        # Save the figure
-        fullpath = os.path.join(pathname, f'histogram for class {class_id} batch {batching_Flag}.png')
-        fig.savefig(fullpath)
-        plt.close()
+            # Set overall figure title and adjust layout
+            fig.suptitle(f'Histogram for class {class_id} batch {batching_Flag} ', fontsize=16)
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+            # Save the figure
+            fullpath = os.path.join(pathname, f'histogram for class {class_id} batch {batching_Flag} subset {idx_es}.png')
+            fig.savefig(fullpath)
+            plt.close()
 
     return
 

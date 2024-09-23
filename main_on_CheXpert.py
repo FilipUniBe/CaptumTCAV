@@ -417,54 +417,46 @@ def mean_score(tcav_scores_all_batches):
 
     return mean_scores
 
-def BCOA_from_pickle():
-    target_class=3
-    pickle_file="/home/fkraehenbuehl/projects/SalCon/results/experiment_019_20240916-154625/combined_data.pkl"
-    with open(pickle_file, 'rb') as f:
-        combined_data = pickle.load(f)
-    tcav_score = combined_data['tcav_score']
 
-    filename=f"CheXpert_absolute_TCAV_class_{target_class}_model_{modelnr}_from_pickle.jpg"
-    plot_tcav_scores(experimental_set_rand, tcav_score, filename)
-    print("plotted")
-    print("finished")
-    return
 
-def run_TCAV_target_class_wrapper(experimental_set,mytcav,name, savefolder, picklefolder,target_class=None, batching=True):
+def run_TCAV_target_class_wrapper(experimental_set,mytcav,name_construct, savefolder, picklefolder,modelnr,target_class=None):
     if target_class is None:
-        for target_class in range(5):
-            filename = f"CheXpert_{name}_class_{target_class}_model_{modelnr}_batching_{batching}.jpg"
-            # If pickles exist, skip calculation and load results
-            pickle_path = os.path.join(picklefolder, f'{filename}.pkl')
-            if os.path.exists(pickle_path):
-                print("using pickle")
-                with open(pickle_path, 'rb') as f:
-                    mean_scores = pickle.load(f)
+        class_list=range(5)
+    else:
+        class_list=target_class
 
-                    for concept_key, concepts in mean_scores.items(): #because cpu-conversion was not part of the pipeline from the beginning
-                        for layer_key, layers in concepts.items():
-                            for modus_key, modus in layers.items():
-                                layers[modus_key] = modus.cpu()
-                    torch.cuda.empty_cache()
+    for target_class in class_list:
+        filename = f"CheXpert_{name_construct}_class_{target_class}_model_{modelnr}_batching_{batching}.jpg"
+        # If pickles exist, skip calculation and load results
+        pickle_path = os.path.join(picklefolder, f'{filename}.pkl')
+        if os.path.exists(pickle_path):
+            print("using pickle")
+            with open(pickle_path, 'rb') as f:
+                mean_scores = pickle.load(f)
 
-            else:
-                print("calculating from scratch")
-                mean_scores=run_TCAV(target_class,experimental_set,mytcav,batching)
-                for concept_key, concepts in mean_scores.items():
+                for concept_key, concepts in mean_scores.items(): #because cpu-conversion was not part of the pipeline from the beginning
                     for layer_key, layers in concepts.items():
                         for modus_key, modus in layers.items():
                             layers[modus_key] = modus.cpu()
                 torch.cuda.empty_cache()
-                with open(pickle_path, 'wb') as f:
-                    pickle.dump(mean_scores, f)
 
-            filename = f"CheXpert_{name}_class_{target_class}_model_{modelnr}_batching_{batching}.jpg"
-            plot_tcav_scores(experimental_set, savefolder, mean_scores, filename)
-            print(f"saved {filename}")
+        else:
+            print("calculating from scratch")
+            mean_scores=run_TCAV(target_class,experimental_set,mytcav)
+            for concept_key, concepts in mean_scores.items():
+                for layer_key, layers in concepts.items():
+                    for modus_key, modus in layers.items():
+                        layers[modus_key] = modus.cpu()
+            torch.cuda.empty_cache()
+            with open(pickle_path, 'wb') as f:
+                pickle.dump(mean_scores, f)
+
+        plot_tcav_scores(experimental_set, savefolder, mean_scores, filename)
+        print(f"saved {filename}")
 
     return
 
-def run_TCAV(target_class,experimental_set,mytcav,batching=True):
+def run_TCAV(target_class,experimental_set,mytcav):
 
     tcav_scores_all_batches=[]
     for images, _, _ in tqdm(test_dataloader, desc="Loading images into memory"):
@@ -476,11 +468,10 @@ def run_TCAV(target_class,experimental_set,mytcav,batching=True):
                                                 )
 
         tcav_scores_all_batches.append(tcav_scores_w_random)
-        if not batching:
-            break #stop after one batch
+
     return mean_score(tcav_scores_all_batches)
 
-def run_repetition_wrapper(repeat_nr,experimental_set,name,picklefolder):
+def run_repetition_wrapper(repeat_nr,experimental_set,type_name,picklefolder,exp_name,modelnr,target_class):
     for current_repeat in tqdm(range(repeat_nr), desc="repeating calculation n times"):
         mytcav = TCAV(model=model,
                       layers=layers,
@@ -488,12 +479,13 @@ def run_repetition_wrapper(repeat_nr,experimental_set,name,picklefolder):
                           model, None, multiply_by_inputs=False),
                       save_path=f"./chexpert-cav/cav-model-{modelnr}-repeat-{current_repeat}/")
 
-        run_TCAV_target_class_wrapper(experimental_set, mytcav,f'name_{name}_rep_{current_repeat}', figurefolder, picklefolder,target_class,
-                                      batching)
+        name_construct=f'exp_{exp_name}_type_{type_name}_rep_{current_repeat}'
+        run_TCAV_target_class_wrapper(experimental_set, mytcav,name_construct, figurefolder, picklefolder,modelnr,target_class
+                                      )
     return
 
 
-def load_and_filter_pickles(directory, class_filter=None, batching_filter=None, repetition_filter=None,model_filter=None,name_filter=None):
+def load_and_filter_pickles(directory, class_filter=None, repetition_filter=None,model_filter=None,name_filter=None,type_filter=None, batching_filter=True):
     # Step 1: Get all pickle files in the directory
     pickle_files = [f for f in os.listdir(directory) if f.endswith('.pkl')]
 
@@ -505,17 +497,19 @@ def load_and_filter_pickles(directory, class_filter=None, batching_filter=None, 
         batching_match = re.search(r'batching_(True|False)', file)
         repetition_match = re.search(r'rep_(\d+)', file)
         model_match = re.search(r'model_(\d+)', file)
-        name_match = re.search(r'name_([^_]+)', file)
+        name_match = re.search(r'exp_([^_]+)', file)
+        type_match = re.search(r'type_([^_]+)', file)
 
         # Filter based on provided arguments
         class_cond = class_filter is None or (class_match and int(class_match.group(1)) == class_filter)
         batching_cond = batching_filter is None or (batching_match and batching_match.group(1) == str(batching_filter))
         repetition_cond = repetition_filter is None or (
-                    repetition_match and int(repetition_match.group(1)) == repetition_filter)
+                repetition_match and int(repetition_match.group(1)) == repetition_filter)
         model_cond = model_filter is None or (model_match and int(model_match.group(1)) == model_filter)
-        name_cond = name_filter is None or (name_match and name_match.group(1) == name_filter)
+        name_cond = name_filter is None or (name_match and name_match.group(1)) == name_filter
+        type_cond = type_filter is None or (type_match and type_match.group(1)) == type_filter
 
-        if class_cond and batching_cond and repetition_cond and model_cond and name_cond:
+        if class_cond and batching_cond and repetition_cond and model_cond and name_cond and type_cond:
             filtered_files.append(file)
 
     all_tcav_scores=[]
@@ -527,8 +521,13 @@ def load_and_filter_pickles(directory, class_filter=None, batching_filter=None, 
 
     return all_tcav_scores,filtered_files
 
-def plot_tcav_scores_per_class_mean(savefolder, filename, layers, dict_stats, experimental_sets,num_elements):
-    classes_list = range(5)
+def plot_tcav_scores_per_class_mean(savefolder, filename, layers, dict_stats, experimental_sets,num_elements,target_class):
+
+    if target_class is None:
+        classes_list=range(5)
+    else:
+        classes_list=target_class
+
     num_classes = len(classes_list)
 
     for subset_idx, subset in enumerate(experimental_sets):
@@ -607,9 +606,65 @@ def plot_tcav_scores_per_class_mean(savefolder, filename, layers, dict_stats, ex
 
     return
 
-def plot_tcav_scores_per_class_median(savefolder, filename, layers, dict_stats, experimental_sets,num_elements):
+def calc_significance(savefolder, filename, layers, dict_stats, experimental_sets,num_elements,target_class):
+    if target_class is None:
+        classes_list = range(5)
+    else:
+        classes_list = target_class
+    num_classes=len(classes_list)
 
-    classes_list=range(5)
+    for subset_idx, subset in enumerate(experimental_sets):
+        for idx_class, class_id in enumerate(classes_list):
+            concepts=subset
+            for i in range(len(concepts)):
+                # Extract mean and std for this concept and class
+                means = []
+                stds = []
+                for layer in layers:
+                    # Extract mean and std for the current layer
+                    layer_stats = dict_stats.get(subset_idx, {}).get(class_id, {}).get(layer, {}).get(i, {})
+                    means.append(layer_stats.get('means', 0))
+                    stds.append(layer_stats.get('std', 0))
+
+                if i==0:
+                    mean1 = means
+                    std1 = stds
+                if i == 1:
+                    mean2 = means
+                    std2 = stds
+
+
+        # Open the text file in append mode ('a')
+        with open(f'{filename}.txt', 'a') as f:
+            n1, n2 = num_elements, num_elements
+            _, p_value = ttest_ind_from_stats(mean1, std1, n1, mean2, std2, n2, equal_var=True,
+                                              alternative='two-sided')
+
+            print(f'subset: {subset_idx}')
+            print(f'class: {class_id}')
+            for concept in concepts:
+                print(f'concept: {concept}')
+            alpha = 0.05
+
+            for idx, p_val in enumerate(p_value):
+                print(f'layer: {layers[idx]}')
+                if p_val < 0.001:
+                    print(f'p-value: P < .001')
+                elif p_val < 0.01:
+                    print(f'p-value: P = {p_val:.3f}')
+                else:
+                    print(f'p-value: P = {p_val:.2f}')
+                if p_val < alpha:
+                    print("statistically significant")
+                else:
+                    print("statistically insignificant")
+
+    return
+def plot_tcav_scores_per_class_median(savefolder, filename, layers, dict_stats, experimental_sets,num_elements,target_class,name_filter):
+    if target_class is None:
+        classes_list = range(5)
+    else:
+        classes_list = target_class
     num_classes=len(classes_list)
 
     for subset_idx, subset in enumerate(experimental_sets):
@@ -678,41 +733,11 @@ def plot_tcav_scores_per_class_median(savefolder, filename, layers, dict_stats, 
                                             f'{median:.2f} (q3: {upper_error:.2f}, q1: {lower_error:.2f})',
                                             ha='center', va='bottom', fontsize=10, color='black')
 
-
-                if i==0:
-                    mean1 = means
-                    std1 = stds
-                if i == 1:
-                    mean2 = means
-                    std2 = stds
-
-            n1, n2 = num_elements, num_elements
-            _, p_value = ttest_ind_from_stats(mean1, std1, n1, mean2, std2, n2, equal_var=True,
-                                              alternative='two-sided')
-
-            print(f'subset: {subset_idx}')
-            print(f'class: {class_id}')
-            for concept in concepts:
-                print(f'concept: {concept}')
-            alpha = 0.05
-
-            for idx, p_val in enumerate(p_value):
-                print(f'layer: {layers[idx]}')
-                if p_val < 0.001:
-                    print(f'p-value: P < .001')
-                elif p_val < 0.01:
-                    print(f'p-value: P = {p_val:.3f}')
-                else:
-                    print(f'p-value: P = {p_val:.2f}')
-                if p_val < alpha:
-                    print("statistically significant")
-                else:
-                    print("statistically insignificant")
-
             ax.set_title(f'Class {class_id}', fontsize=14)
             ax.set_ylabel('Median TCAV Score', fontsize=12)
             ax.set_xticks(layer_positions + (len(subset) - 1) * (barWidth + spacing) / 2)
-            ax.set_xticklabels(layers, fontsize=10)
+            layerlabels = [layer.replace("densenet121.features.", "") for layer in layers]
+            axs_all[idx_class].set_xticklabels(layerlabels, fontsize=10)
             ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(subset), fontsize=10)
 
             # Save individual class figure
@@ -725,7 +750,8 @@ def plot_tcav_scores_per_class_median(savefolder, filename, layers, dict_stats, 
             axs_all[idx_class].set_title(f'TCAV Scores for Class {idx_class}', fontsize=14)
             axs_all[idx_class].set_ylabel('Median TCAV Score', fontsize=12)
             axs_all[idx_class].set_xticks(layer_positions + (len(subset) - 1) * (barWidth + spacing) / 2)
-            axs_all[idx_class].set_xticklabels(layers, fontsize=10)
+            layerlabels=[layer.replace("densenet121.features.","") for layer in layers]
+            axs_all[idx_class].set_xticklabels(layerlabels, fontsize=10)
             axs_all[idx_class].legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(subset), fontsize=10)
 
         # Save the all-classes figure
@@ -736,7 +762,7 @@ def plot_tcav_scores_per_class_median(savefolder, filename, layers, dict_stats, 
 
     return
 
-def calculate_tcav_stats(picklefolder, layers, experimental_set_rand, score_type="sign_count", repetition=None):
+def calculate_tcav_stats(name_filter,type_filter,picklefolder, layers, experimental_set_rand, score_type="sign_count", repetition=None):
 
     # Use defaultdict to avoid manual initialization of dictionaries
     dict_of_stats = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict))))
@@ -748,8 +774,8 @@ def calculate_tcav_stats(picklefolder, layers, experimental_set_rand, score_type
 
             for score_layer in layers:
 
-                all_tcav_scores, _ = load_and_filter_pickles(picklefolder, class_id, batching_filter, repetition,
-                                                             model_filter, name_filter)
+                all_tcav_scores, _ = load_and_filter_pickles(picklefolder, class_id, repetition,
+                                                             model_filter, name_filter,type_filter)
                 for idx in range(2):
 
                     score_list = []
@@ -777,7 +803,7 @@ def calculate_tcav_stats(picklefolder, layers, experimental_set_rand, score_type
     return dict_of_stats, num_elements
 
 
-def calculate_tcav_stats_with_repetitions(picklefolder, layers, experimental_set_rand, score_type="sign_count",repetition=None
+def calculate_tcav_stats_with_repetitions(name_filter,type_filter,picklefolder, layers, experimental_set_rand, score_type="sign_count",repetition=None
                                           ):
     # Use defaultdict to avoid manual initialization of dictionaries
     dict_of_stats = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))))
@@ -790,8 +816,8 @@ def calculate_tcav_stats_with_repetitions(picklefolder, layers, experimental_set
 
                 for score_layer in layers:
 
-                    all_tcav_scores, _ = load_and_filter_pickles(picklefolder, class_id, batching_filter, repetition,
-                                                                 model_filter, name_filter)
+                    all_tcav_scores, _ = load_and_filter_pickles(picklefolder, class_id, repetition,
+                                                             model_filter, name_filter,type_filter)
                     # Iterate over the number of repetitions
                     for rep_num in range(1, len(all_tcav_scores) + 1):
                         for idx in range(2):
@@ -811,7 +837,7 @@ def calculate_tcav_stats_with_repetitions(picklefolder, layers, experimental_set
     return dict_of_stats,num_elements
 
 
-def plot_tcav_means_across_repetitions(savefolder, filename, layers, dict_of_stats, experimental_sets,num_elements):
+def plot_tcav_median_across_repetitions(savefolder, filename, layers, dict_of_stats, experimental_sets, num_elements):
     # Define classes (example range from 0 to 4)
     classes_list = range(5)
     num_classes = len(classes_list)
@@ -884,7 +910,7 @@ def remove_outliers_list(vals):
     filtered_vals = vals[(vals >= lower_bound) & (vals <= upper_bound)]
     return filtered_vals
 
-def plot_tcav_means_across_repetitions_individual(savefolder, filename, layers, dict_of_stats, experimental_sets, num_elements):
+def plot_tcav_median_across_repetitions_individual(savefolder, filename, layers, dict_of_stats, experimental_sets, num_elements):
     # Define classes (example range from 0 to 4)
     classes_list = range(5)
 
@@ -961,139 +987,240 @@ def plot_tcav_means_across_repetitions_individual(savefolder, filename, layers, 
 
     return
 
+def plot_cumulative_tcav_mean_for_class(savefolder, filename, layers, dict_of_stats, experimental_sets,
+                                          num_elements, target_class):
+    if target_class is None:
+        class_list = range(5)
+    else:
+        class_list = target_class
 
-def plot_tcav_median_for_class(savefolder, filename, layers, dict_of_stats, experimental_sets,
-                                                  num_elements):
-    # Define target class (e.g., class 4)
-    target_class = 4
+    for target_class in class_list:
+        # Iterate through subsets
+        for subset_idx, subset in enumerate(experimental_sets):
+            # Create a new figure for each subset
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.set_ylim([0, 1])
 
-    # Iterate through subsets
-    for subset_idx, subset in enumerate(experimental_sets):
-        # Create a new figure for each subset
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.set_ylim([0, 1])
+            # Iterate through layers to plot both concepts for each layer in the current subset
+            for layer in layers:
+                for idx_concept in range(2):  # Assuming two concepts (0 and 1)
+                    # Initialize lists to store median and IQR values across repetitions
 
-        # Iterate through layers to plot both concepts for each layer in the current subset
-        for layer in layers:
-            for idx_concept in range(2):  # Assuming two concepts (0 and 1)
-                # Initialize lists to store median and IQR values across repetitions
-                repetition_medians = []
-                repetition_iqrs = []
-                repetition_counts = list(range(1, num_elements + 1))  # Repetition numbers
+                    repetition_counts = list(range(1, num_elements + 1))  # Repetition numbers
+                    repetition_means=[]
+                    repetition_stds=[]
 
-                # Collect median and IQR for each repetition
-                for rep_num in repetition_counts:
-                    layer_stats = dict_of_stats.get(subset_idx, {}).get(target_class, {}).get(layer, {}).get(
-                        idx_concept, {}).get(rep_num, {})
+                    # Collect median and IQR for each repetition
+                    for rep_num in repetition_counts:
+                        layer_stats = dict_of_stats.get(subset_idx, {}).get(target_class, {}).get(layer, {}).get(
+                            idx_concept, {}).get(rep_num, {})
 
-                    if layer_stats:  # Ensure stats exist for the current repetition
-                        vals = layer_stats.get('vals', [])
-                        filtered_vals = remove_outliers(vals)
+                        if layer_stats:  # Ensure stats exist for the current repetition
+                            means = layer_stats.get('means')
+                            stds = layer_stats.get('std')
 
-                        # Compute median and IQR
-                        median = np.median(filtered_vals)
-                        q1 = np.percentile(filtered_vals, 25)  # 25th percentile (Q1)
-                        q3 = np.percentile(filtered_vals, 75)  # 75th percentile (Q3)
-                        iqr = q3 - q1  # IQR
+                            repetition_means.append(means)
+                            repetition_stds.append(stds)
 
-                        repetition_medians.append(median)
-                        repetition_iqrs.append(iqr)
-                    else:
-                        repetition_medians.append(np.nan)
-                        repetition_iqrs.append(np.nan)
+                        # Convert to numpy arrays for easier plotting
+                        repetition_means_np = np.array(repetition_means)
+                        repetition_stds_np = np.array(repetition_stds)
 
-                # Convert to numpy arrays for easier plotting
-                repetition_medians = np.array(repetition_medians)
-                repetition_iqrs = np.array(repetition_iqrs)
+                    # Calculate the confidence intervals
+                    n = num_elements  # Number of repetitions
+                    z_score = 1.96  # Z-score for 95% confidence interval  # Z-score for 95% CI
+                    ci_margin = z_score * (repetition_stds_np / np.sqrt(num_elements))  # Margin of error for the CI
 
-                # Calculate the confidence intervals
-                n = num_elements  # Number of repetitions
-                z_score = stats.norm.ppf(0.975)  # Z-score for 95% CI
-                ci_margin = z_score * (repetition_iqrs / np.sqrt(n)) / 1.35  # Margin of error for the CI
+                    # Plot the medians across repetitions for the current concept, overlaid for each layer
+                    ax.plot(repetition_counts, repetition_means_np, label=f'Layer {layer}, Concept {idx_concept}')
+                    ax.fill_between(repetition_counts, repetition_means - ci_margin,
+                                    repetition_means_np + ci_margin, alpha=0.3)
 
-                # Plot the medians across repetitions for the current concept, overlaid for each layer
-                ax.plot(repetition_counts, repetition_medians, label=f'Layer {layer}, Concept {idx_concept}')
-                ax.fill_between(repetition_counts, repetition_medians - ci_margin,
-                                repetition_medians + ci_margin, alpha=0.3)
+            # Add titles and labels for the combined plot (for the current subset)
+            ax.set_title(f'Subset {subset_idx} for Class {target_class} (All Layers & Concepts)', fontsize=14)
+            ax.set_xlabel('Number of Repetitions', fontsize=12)
+            ax.set_ylabel('Median TCAV Score', fontsize=12)
 
-        # Add titles and labels for the combined plot (for the current subset)
-        ax.set_title(f'Subset {subset_idx} for Class {target_class} (All Layers & Concepts)', fontsize=14)
-        ax.set_xlabel('Number of Repetitions', fontsize=12)
-        ax.set_ylabel('Median TCAV Score', fontsize=12)
+            # Move the legend below the plot with entries on new lines
+            ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.3), fancybox=True, shadow=True, ncol=1, fontsize=10)
 
-        # Move the legend below the plot with entries on new lines
-        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.3), fancybox=True, shadow=True, ncol=1, fontsize=10)
+            # Adjust layout to make room for the legend below
+            plt.tight_layout(rect=[0, 0, 1, 0.9])  # Increase bottom space for legend
 
-        # Adjust layout to make room for the legend below
-        plt.tight_layout(rect=[0, 0, 1, 0.9])  # Increase bottom space for legend
-
-        # Save the overlay figure for this subset
-        fullpath = os.path.join(savefolder, f'overlay_{filename}_subset_{subset_idx}_class_{target_class}.png')
-        plt.savefig(fullpath, bbox_inches='tight')  # Ensures the legend is fully captured in the saved figure
-        plt.close()
+            # Save the overlay figure for this subset
+            fullpath = os.path.join(savefolder, f'overlay_{filename}_subset_{subset_idx}_class_{target_class}.png')
+            plt.savefig(fullpath, bbox_inches='tight')  # Ensures the legend is fully captured in the saved figure
+            plt.close()
 
     return
 
-def plot_q_q(dict_of_stats, experimental_sets, pathname):
+def plot_cumulative_tcav_median_for_class(savefolder, filename, layers, dict_of_stats, experimental_sets,
+                                          num_elements, target_class):
+    if target_class is None:
+        class_list = range(5)
+    else:
+        class_list = target_class
+
+    for target_class in class_list:
+        # Iterate through subsets
+        for subset_idx, subset in enumerate(experimental_sets):
+            # Create a new figure for each subset
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.set_ylim([0, 1])
+
+            # Iterate through layers to plot both concepts for each layer in the current subset
+            for layer in layers:
+                for idx_concept in range(2):  # Assuming two concepts (0 and 1)
+                    # Initialize lists to store median and IQR values across repetitions
+                    repetition_medians = []
+                    repetition_iqrs = []
+                    repetition_counts = list(range(1, num_elements + 1))  # Repetition numbers
+
+                    # Collect median and IQR for each repetition
+                    for rep_num in repetition_counts:
+                        layer_stats = dict_of_stats.get(subset_idx, {}).get(target_class, {}).get(layer, {}).get(
+                            idx_concept, {}).get(rep_num, {})
+
+                        if layer_stats:  # Ensure stats exist for the current repetition
+                            vals = layer_stats.get('vals', [])
+                            filtered_vals = remove_outliers(vals)
+
+                            # Compute median and IQR
+                            median = np.median(filtered_vals)
+                            q1 = np.percentile(filtered_vals, 25)  # 25th percentile (Q1)
+                            q3 = np.percentile(filtered_vals, 75)  # 75th percentile (Q3)
+                            iqr = q3 - q1  # IQR
+
+                            repetition_medians.append(median)
+                            repetition_iqrs.append(iqr)
+                        else:
+                            repetition_medians.append(np.nan)
+                            repetition_iqrs.append(np.nan)
+
+                    # Convert to numpy arrays for easier plotting
+                    repetition_medians = np.array(repetition_medians)
+                    repetition_iqrs = np.array(repetition_iqrs)
+
+                    # Calculate the confidence intervals
+                    n = num_elements  # Number of repetitions
+                    z_score = stats.norm.ppf(0.975)  # Z-score for 95% CI
+                    ci_margin = z_score * (repetition_iqrs / np.sqrt(n)) / 1.35  # Margin of error for the CI
+
+                    # Plot the medians across repetitions for the current concept, overlaid for each layer
+                    ax.plot(repetition_counts, repetition_medians, label=f'Layer {layer}, Concept {idx_concept}')
+                    ax.fill_between(repetition_counts, repetition_medians - ci_margin,
+                                    repetition_medians + ci_margin, alpha=0.3)
+
+            # Add titles and labels for the combined plot (for the current subset)
+            ax.set_title(f'Subset {subset_idx} for Class {target_class} (All Layers & Concepts)', fontsize=14)
+            ax.set_xlabel('Number of Repetitions', fontsize=12)
+            ax.set_ylabel('Median TCAV Score', fontsize=12)
+
+            # Move the legend below the plot with entries on new lines
+            ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.3), fancybox=True, shadow=True, ncol=1, fontsize=10)
+
+            # Adjust layout to make room for the legend below
+            plt.tight_layout(rect=[0, 0, 1, 0.9])  # Increase bottom space for legend
+
+            # Save the overlay figure for this subset
+            fullpath = os.path.join(savefolder, f'overlay_{filename}_subset_{subset_idx}_class_{target_class}.png')
+            plt.savefig(fullpath, bbox_inches='tight')  # Ensures the legend is fully captured in the saved figure
+            plt.close()
+
+    return
+
+def plot_histogram(dict_of_stats, experimental_sets, pathname, filename, target_class):
 
     num_sets = len(experimental_sets)
     concepts = [0, 1]  # Assuming two concepts
     score_type="sign_count"
 
-    class_id=4
+    if target_class is None:
+        class_list = range(5)
+    else:
+        class_list = target_class
 
     colors = ['blue', 'orange']  # Colors for different concepts
     alphas = [0.6, 0.6]  # Transparency for overlapping histograms
 
     # Total grid size based on batching (2), classes (variable), and experimental sets (num_sets)
     num_layer = len(layers)  # Total number of classes
-    fig, axs = plt.subplots(num_sets,num_layer, figsize=(15, 15), sharex=True, sharey=True)
 
-    for idx_es, subset in enumerate(experimental_sets):  # Horizontal: experimental sets
+    for class_id in class_list:
+        for idx_es, subset in enumerate(experimental_sets):  # Horizontal: experimental sets
 
-        for idx_layer, layer in enumerate(layers):
-            ax = axs[idx_es, idx_layer]  # Select correct subplot
+            fig, axs = plt.subplots(1, num_layer, figsize=(15,5), sharex=True, sharey=True)
 
-            ax.cla()
+            for idx_layer, layer in enumerate(layers):
+                ax = axs[idx_layer]  # Select correct subplot
 
-            # Plot Q-Q plot for each concept (on the same axis)
-            for concept_idx,concept in enumerate(subset):
+                #ax.cla()
 
-                layer_stats = dict_of_stats.get(idx_es, {}).get(class_id, {}).get(layer, {}).get(concept_idx, {})
-                vals=layer_stats[len(layer_stats)]["vals"]
+                # Plot Q-Q plot for each concept (on the same axis)
+                for concept_idx,concept in enumerate(subset):
 
-                if vals is None:
-                    print("vals empty")
-                if len(vals)==0:
-                    print("vals of 0 lenght")
+                    layer_stats = dict_of_stats.get(idx_es, {}).get(class_id, {}).get(layer, {}).get(concept_idx, {})
+                    vals=layer_stats[len(layer_stats)]["vals"]
 
-                # Plot the Q-Q plot for each concept
-                vals=np.array(vals)
-                #bins=len(vals)
-                bins=math.ceil(math.sqrt(len(vals)))
-                ax.hist(vals, bins=bins, range=[0,1], alpha=alphas[concept_idx], color=colors[concept_idx], label=f'Concept {concept_idx}')
-                #sm.qqplot(vals, line='45',ax=ax)
+                    if vals is None:
+                        print("vals empty")
+                    if len(vals)==0:
+                        print("vals of 0 lenght")
 
-                # Set axis labels only for bottom row and first column plots for clarity
-                if idx_es == num_sets - 1:
+                    # Plot the Q-Q plot for each concept
+                    vals=np.array(vals)
+                    #bins=len(vals)
+                    bins=math.ceil(math.sqrt(len(vals)))
+                    ax.hist(vals, bins=bins, range=[0,1], alpha=alphas[concept_idx], color=colors[concept_idx], label=f'Concept {concept_idx}')
+                    #sm.qqplot(vals, line='45',ax=ax)
+
+                    # Set axis labels only for bottom row and first column plots for clarity
+                    #if idx_es == num_sets - 1:
                     layer_label = layer.replace("densenet121.features.", "")
                     ax.set_xlabel(f'Layer {layer_label}')
-                if idx_layer == 0:
+                    #if idx_layer == 0:
                     ax.set_ylabel(f'Subset {idx_es}')
 
-                # Add legend to distinguish between concepts
-                ax.legend(loc='upper right')
+                    # Add legend to distinguish between concepts
+                    ax.legend(loc='upper right')
+
+                    ax.set_ylim([0,50])
+                    #ax.set_aspect('equal')
 
 
-            # Set overall figure title and adjust layout
-        fig.suptitle(f'Histogram for class {class_id} ', fontsize=16)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+                    # Set overall figure title and adjust layout
+            fig.suptitle(f'Histogram for class {class_id} ', fontsize=16)
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
-        # Save the figure
-        fullpath = os.path.join(pathname, f'histogram for class {class_id}.png')
-        fig.savefig(fullpath)
-        plt.close()
+            # Save the figure
+            fullpath = os.path.join(pathname, f'histogram {filename} for class {class_id} for subset {idx_es}.png')
+            fig.savefig(fullpath)
+            plt.close()
 
+    return
+
+def package_concepts(concepts_list, random_concept, healthy_concept):
+    experimental_set_rand = []
+
+    for concept in concepts_list:
+        # Create a list of pairs for each concept
+        concept_comparison = [
+            [concept, random_concept],
+            [concept, healthy_concept]
+        ]
+
+        # Append the comparison list to the main list
+        experimental_set_rand.append(concept_comparison)
+
+    return experimental_set_rand
+
+def calc_all_concepts(experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,target_class):
+
+
+    for experimental_set_abs in experimental_sets_abs:
+        exp_name = experimental_set_abs[0][0].name
+        abbr_value = exp_name.split("abbr-")[1].split("_exp")[0]
+        run_repetition_wrapper(repeat_nr, experimental_set_abs, type_name, picklefolder, abbr_value, modelnr,target_class)
     return
 
 if __name__ == "__main__":
@@ -1121,7 +1248,7 @@ if __name__ == "__main__":
     BO = "type-pos_abbr-BO_exp-1_form-polygon_resize-false_bg-original"
     KL = "type-pos_abbr-KL_exp-1_form-polygon_resize-false_bg-original"
     PC = "type-pos_abbr-PC_exp-1_form-polygon_resize-false_bg-original"
-    PILi = "type-pos_abbr-PILi_exp-1_form-polygon_resize-false_bg-original"
+    PILi = "type-pos_abbr-PlLi_exp-1_form-polygon_resize-false_bg-original"
     SAS = "type-pos_abbr-SAS_exp-1_form-polygon_resize-false_bg-original"
     healthy_patches = "healthy_patches"
     random_patches = "random_patches"
@@ -1172,9 +1299,6 @@ if __name__ == "__main__":
     # Load the dataloader
     test_dataloader = load_data(dataset_type="test")
 
-    experimental_set_rand = [[BCoA_concept, random_patches_concept], [BCoA_concept, healthy_patches_concept]]
-    experimental_set_zig_dot = [[BCoA_concept, BCaA_concept, MSign_concept]]
-
     target_class=None
     batching=True
 
@@ -1187,47 +1311,59 @@ if __name__ == "__main__":
         os.makedirs(picklefolder)
 
     #run absolute comparision
-    repeat_nr = 50#50
-    name=f"abs"
-    #run_repetition_wrapper(repeat_nr,experimental_set_rand,name,picklefolder) #todo disabled for debug
-
-    repeat_nr = 29  # 50
-    name = f"rel"
-    #run_repetition_wrapper(repeat_nr,experimental_set_zig_dot,name,picklefolder) #todo disabled for debug
+    repeat_nr = 30
+    type_name=f"abs"
 
 
-    name_filter = "abs"
-    batching_filter = True
+    # todo took out debug BCoA,BCaA, because already calculated
+    # concepts = [BCoA_concept, BCaA_concept,MSign_concept, FIHOOF_concept, AB_concept, BO_concept, KL_concept, PC_concept, PILi_concept,
+    #             SAS_concept, cable_concept, Marker_concept]
+    # todo debug for now
+    #concepts = [PILi_concept,SAS_concept]
+    concepts = [cable_concept,Marker_concept]#, cable_concept, Marker_concept]
+    target_class=[1,2,3,4,5]
+    experimental_sets_abs = package_concepts(concepts, random_patches_concept, healthy_patches_concept)
+    calc_all_concepts(experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,target_class)
+
+    #todo took relative out for now
+
+    type_filter = f"abs"  # todo important to not forget!!!
     model_filter = None
-    filename=f"gridplot_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
     classes=5
-
-    # plot gridplot for the repetitions (first 3)
-    #plot_tcav_scores_grid(experimental_set_rand, figurefolder, picklefolder, layers, filename, batching_filter, model_filter, name_filter, classes)
-
     repetition=None
     score_type="sign_count"
 
-    #barplot for means
-    dict_of_stats,num_elements=calculate_tcav_stats(picklefolder, layers, experimental_set_rand, score_type="sign_count", repetition=None)
-    filename=f"meanplot_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
-    plot_tcav_scores_per_class_mean(figurefolder, filename, layers, dict_of_stats,
-                               experimental_set_rand, num_elements)
-    filename = f"medianplot_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
-    plot_tcav_scores_per_class_median(figurefolder, filename, layers, dict_of_stats,
-                               experimental_set_rand,num_elements)
+    for experimental_set_abs in experimental_sets_abs:
+        exp_name = experimental_set_abs[0][0].name
+        abbr_value = exp_name.split("abbr-")[1].split("_exp")[0]
+        name_filter = f"{abbr_value}"
 
-    #line plot tracking means
-    dict_of_stats,num_elements=calculate_tcav_stats_with_repetitions(picklefolder, layers, experimental_set_rand, score_type="sign_count", repetition=None)
-    filename = f"trackingmean_name_{name_filter}_batching_{batching_filter}_model_{model_filter}"
-    # plot_tcav_means_across_repetitions(figurefolder, filename, layers, dict_of_stats,
-    #                                    experimental_set_rand,num_elements)
-    # plot_tcav_means_across_repetitions_individual(figurefolder, filename, layers, dict_of_stats,
-    #                                    experimental_set_rand, num_elements)
-    plot_tcav_median_for_class(figurefolder, filename, layers, dict_of_stats,
-                                       experimental_set_rand, num_elements)
+        #barplot for means
+        dict_of_stats,num_elements=calculate_tcav_stats(name_filter,type_filter,picklefolder, layers, experimental_set_abs, score_type="sign_count", repetition=None)
+        filename=f"meanplot_name_{name_filter}_model_{model_filter}"
+        plot_tcav_scores_per_class_mean(figurefolder, filename, layers, dict_of_stats,
+                                   experimental_set_abs, num_elements,target_class)
+        filename = f"medianplot_name_{name_filter}_model_{model_filter}"
+        plot_tcav_scores_per_class_median(figurefolder, filename, layers, dict_of_stats,
+                                   experimental_set_abs,num_elements,target_class,name_filter)
+        filename = f"significance_{name_filter}_model_{model_filter}"
+        calc_significance(figurefolder, filename, layers, dict_of_stats,
+                                   experimental_set_abs,num_elements,target_class)
 
-    plot_q_q(dict_of_stats, experimental_set_rand, figurefolder)
+
+        #line plot tracking means
+        dict_of_stats,num_elements=calculate_tcav_stats_with_repetitions(name_filter,type_filter,picklefolder, layers, experimental_set_abs, score_type="sign_count", repetition=None)
+        filename = f"cumulative_median_name_{name_filter}_model_{model_filter}"
+        plot_cumulative_tcav_median_for_class(figurefolder, filename, layers, dict_of_stats,
+                                              experimental_set_abs, num_elements, target_class)
+        filename = f"cumulative_mean_name_{name_filter}_model_{model_filter}"
+        plot_cumulative_tcav_mean_for_class(figurefolder, filename, layers, dict_of_stats,
+                                              experimental_set_abs, num_elements, target_class)
+
+        filename = f"histogram_name_{name_filter}_model_{model_filter}"
+        plot_histogram(dict_of_stats, experimental_set_abs, figurefolder, filename, target_class)
+
+        print(f'plotted all for {name_filter}')
 
 
     print("ran trough script")
