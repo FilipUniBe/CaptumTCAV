@@ -66,6 +66,9 @@
       <excludeFolder url="file://$MODULE_DIR$/tensorboard_results" />
       <excludeFolder url="file://$MODULE_DIR$/checkpoint_folder" />
       <excludeFolder url="file://$MODULE_DIR$/prep-model" />
+      <excludeFolder url="file://$MODULE_DIR$/chexpert-cav-2" />
+      <excludeFolder url="file://$MODULE_DIR$/chexpert-figures-2" />
+      <excludeFolder url="file://$MODULE_DIR$/chexpert-pickles-2" />
     </content>
     <orderEntry type="jdk" jdkName="salcon_py310" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

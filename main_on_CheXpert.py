@@ -157,7 +157,7 @@ class Load_from_path_Dataset(Dataset):
         return image, label, img_path
 
 
-def preprocess_excel(labels_meta,exist_labels,dropconcepts=False):
+def preprocess_excel(labels_meta,exist_labels,useconcepts=False):
 
     # fill NA with zeros for specified columns
     labels_meta[exist_labels] = labels_meta[exist_labels].fillna(0)
@@ -181,7 +181,9 @@ def preprocess_excel(labels_meta,exist_labels,dropconcepts=False):
     # Drop the columns not in the specified list
     labels_meta = labels_meta.drop(columns=columns_to_drop)
 
-    if dropconcepts:
+    if useconcepts:
+        pass
+    else:
         print("excluding concept images")
 
         # Load the valid and test exclusion lists from the text files
@@ -302,7 +304,7 @@ def load_and_prepare_model(model, num_classes, device):
         checkpoint = torch.load(model, map_location=device)
 
     model = DenseNet121(num_classes)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(checkpoint["state_dict"])#model_state_dict todo temp?
     model = model.eval().to(device)
     return model
 
@@ -458,7 +460,7 @@ def run_TCAV(target_class,experimental_set,mytcav,data_loader):
 
     return mean_score(tcav_scores_all_batches)
 
-def run_repetition_wrapper(layers,repeat_nr,experimental_set,type_name,picklefolder,exp_name,modelnr,data_loader,target_class):
+def run_repetition_wrapper(cav_folder,layers,repeat_nr,experimental_set,type_name,picklefolder,exp_name,modelnr,data_loader,target_class):
     firstimagepath=data_loader.dataset.img_paths[0]
     if 'valid' in firstimagepath:
         dsstring='valid'
@@ -469,7 +471,7 @@ def run_repetition_wrapper(layers,repeat_nr,experimental_set,type_name,picklefol
                       layers=layers,
                       layer_attr_method=LayerIntegratedGradients(
                           model, None, multiply_by_inputs=False),
-                      save_path=f"./chexpert-cav/cav-model-{modelnr}-repeat-{current_repeat}-ds-{dsstring}/")
+                      save_path=f"./{cav_folder}/cav-model-{modelnr}-repeat-{current_repeat}-ds-{dsstring}/")
 
         name_construct=f'exp_{exp_name}_type_{type_name}_rep_{current_repeat}'
         run_TCAV_target_class_wrapper(experimental_set, mytcav,name_construct, figurefolder, picklefolder,modelnr,data_loader,dsstring,target_class
@@ -1291,7 +1293,7 @@ def package_concepts(concepts_list, random_concept, healthy_concept):
 
     return experimental_set_rand
 
-def calc_all_concepts(layers,experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,data_loader,target_class):
+def calc_all_concepts(cav_folder,layers,experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,data_loader,target_class):
 
 
     for experimental_set_abs in experimental_sets_abs:
@@ -1301,7 +1303,7 @@ def calc_all_concepts(layers,experimental_sets_abs,repeat_nr,type_name,picklefol
             abbr_value="BcoA-wo-test" #todo hack for this test
 
 
-        run_repetition_wrapper(layers,repeat_nr, experimental_set_abs, type_name, picklefolder, abbr_value, modelnr,data_loader,target_class)
+        run_repetition_wrapper(cav_folder,layers,repeat_nr, experimental_set_abs, type_name, picklefolder, abbr_value, modelnr,data_loader,target_class)
     return
 
 if __name__ == "__main__":
@@ -1339,7 +1341,7 @@ if __name__ == "__main__":
     healthy_patches_valid= "healthy_patches_valid"
     random_patches_valid= "random_patches_valid"
 
-    device = setup_device()
+    device = setup_device(1) #todo can be anything
 
     BCoA_concept = assemble_concept(BCoA, 0, device,concepts_path=concepts_path)
     BCoA_tmp_concept = assemble_concept(BCoA, 17, device, concepts_path=concepts_path) #todo debug
@@ -1366,11 +1368,12 @@ if __name__ == "__main__":
     path_load_model_2 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_2/densenet_model_bilinear_lr0.0001_epoches5-1.pt'
     path_load_model_3 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_3/markermodel_model_bilinear_lr0.0001_epoches5.pt'
 
-    modelnr=0
+    modelnr=1
     if modelnr==0:
         path_load_model = '/home/fkraehenbuehl/projects/SalCon/model/models/model_0/densenet pretrain unweighted bce with class weight wd0.0001_model_gc_lr0.0001_epoches5.pt'
     elif modelnr==1:
         path_load_model = '/home/fkraehenbuehl/projects/SalCon/model/models/model_1/densenet_model_bilinear_lr0.0001_epoches5.pt'
+        path_load_model = '/home/fkraehenbuehl/projects/CaptumTCAV/prep-model/checkpoint_latest_w_concept.pth.tar' #todo temp
     elif modelnr==2:
         path_load_model = '/home/fkraehenbuehl/projects/SalCon/model/models/model_2/densenet_model_bilinear_lr0.0001_epoches5-1.pt'
     elif modelnr==3:
@@ -1395,13 +1398,17 @@ if __name__ == "__main__":
 
     batching=True
 
-    figurefolder= "./chexpert-figures"
+    figurefolder= "./chexpert-figures-2" #todo debug 2
     if not os.path.exists(figurefolder):
         os.makedirs(figurefolder)
 
-    picklefolder = "./chexpert-pickles"
+    picklefolder = "./chexpert-pickles-2" #todo debug 2
     if not os.path.exists(picklefolder):
         os.makedirs(picklefolder)
+
+    cav_folder = "./chexpert-cav-2" #todo debug 2
+    if not os.path.exists(cav_folder):
+        os.makedirs(cav_folder)
 
     #run absolute comparision
     repeat_nr = 30
@@ -1414,10 +1421,10 @@ if __name__ == "__main__":
     # todo debug for now
     #concepts = [BCoA_concept, BCaA_concept,MSign_concept, FIHOOF_concept, AB_concept]
     #concepts = [PILi_concept,SAS_concept]
-    concepts = [BCoA_tmp_concept]
+    concepts = [BCoA_concept]
     target_class=[4]#[0,1,2,3,4]
     experimental_sets_abs = package_concepts(concepts, random_patches_concept, healthy_patches_concept)
-    calc_all_concepts(layers,experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,dataloader,target_class) #todo debug
+    calc_all_concepts(cav_folder,layers,experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,dataloader,target_class) #todo debug
 
     type_filter = f"abs"  # todo important to not forget!!!
     model_filter = modelnr
