@@ -62,6 +62,10 @@
       <excludeFolder url="file://$MODULE_DIR$/zebra-cav/cav-zebra-repeat-1" />
       <excludeFolder url="file://$MODULE_DIR$/zebra-figures" />
       <excludeFolder url="file://$MODULE_DIR$/zebra-pickle" />
+      <excludeFolder url="file://$MODULE_DIR$/store_model" />
+      <excludeFolder url="file://$MODULE_DIR$/tensorboard_results" />
+      <excludeFolder url="file://$MODULE_DIR$/checkpoint_folder" />
+      <excludeFolder url="file://$MODULE_DIR$/prep-model" />
     </content>
     <orderEntry type="jdk" jdkName="salcon_py310" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
