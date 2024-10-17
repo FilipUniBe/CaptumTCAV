@@ -69,6 +69,9 @@
       <excludeFolder url="file://$MODULE_DIR$/chexpert-cav-2" />
       <excludeFolder url="file://$MODULE_DIR$/chexpert-figures-2" />
       <excludeFolder url="file://$MODULE_DIR$/chexpert-pickles-2" />
+      <excludeFolder url="file://$MODULE_DIR$/chexpert-cav-3" />
+      <excludeFolder url="file://$MODULE_DIR$/chexpert-figures-3" />
+      <excludeFolder url="file://$MODULE_DIR$/chexpert-pickles-3" />
     </content>
     <orderEntry type="jdk" jdkName="salcon_py310" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

@@ -236,6 +236,8 @@ def load_data(dataset_type):
         csv_file = config["test_csv"]
     elif dataset_type == "train":
         csv_file = config["train_csv"]
+    elif dataset_type == "testwmarker":
+        csv_file = "/home/fkraehenbuehl/projects/CheXpert-v1.0-marker/test.csv"
     else:
         raise ValueError(f"Invalid dataset_type: {dataset_type}. Choose from 'valid', 'test', or 'train'.")
 
@@ -301,10 +303,15 @@ def load_and_prepare_model(model, num_classes, device):
     if device == "cpu":
         checkpoint = torch.load(model, map_location=torch.device("cpu"))
     else:
-        checkpoint = torch.load(model, map_location=device)
+        checkpoint = torch.load(model, map_location=torch.device(device))
 
     model = DenseNet121(num_classes)
-    model.load_state_dict(checkpoint["state_dict"])#model_state_dict todo temp?
+    try:
+        model.load_state_dict(checkpoint['model_state_dict'])#model_state_dict todo temp?
+        print("full model")
+    except:
+        model.load_state_dict(checkpoint['state_dict'])  # model_state_dict todo temp?
+        print("checkpoint only")
     model = model.eval().to(device)
     return model
 
@@ -460,12 +467,14 @@ def run_TCAV(target_class,experimental_set,mytcav,data_loader):
 
     return mean_score(tcav_scores_all_batches)
 
-def run_repetition_wrapper(cav_folder,layers,repeat_nr,experimental_set,type_name,picklefolder,exp_name,modelnr,data_loader,target_class):
+def run_repetition_wrapper(dl_name,cav_folder,layers,repeat_nr,experimental_set,type_name,picklefolder,exp_name,modelnr,data_loader,target_class):
     firstimagepath=data_loader.dataset.img_paths[0]
     if 'valid' in firstimagepath:
         dsstring='valid'
     if 'test' in firstimagepath:
         dsstring='test'
+    if dl_name == "testwmarker":
+        dsstring='testwmarker'
     for current_repeat in tqdm(range(repeat_nr), desc="repeating calculation n times"):
         mytcav = TCAV(model=model,
                       layers=layers,
@@ -615,11 +624,13 @@ def calc_significance(savefolder, filename, layers, dict_stats, experimental_set
     # Open the text file in write mode ('w')
     with open(f'{filename}.txt', 'w') as f:
         for subset_idx, subset in enumerate(experimental_sets):
+            f.write(f"\nSubset: {subset_idx}\n")
             for idx_class, class_id in enumerate(classes_list):
+                f.write(f"\nClass: {class_id}\n")
                 concepts=subset
 
                 # Write table header for each subset
-                f.write(f"\nSubset: {subset_idx}\n")
+
                 f.write(f"{'Layer':<10} | {'C0':<30} | {'C1':<30} | {'n':<10} | {'P-Val':<20} | {'Significance':<20}\n")
                 f.write("-" * 115 + "\n")  # Separator line
 
@@ -1081,7 +1092,7 @@ def plot_cumulative_tcav_grandmean_for_class(savefolder, filename, layers, dict_
                 grand_stds_np=np.array(grand_stds)
 
                 # Track stabilization
-                stabilization_index, is_stable = track_mean_stabilization(grand_means_np)
+                #stabilization_index, is_stable = track_mean_stabilization(grand_means_np)
 
                 # Choose a color for the current layer
                 color = color_map(layer_indx)
@@ -1091,20 +1102,20 @@ def plot_cumulative_tcav_grandmean_for_class(savefolder, filename, layers, dict_
                 ax.fill_between(range(len(repetition_counts)), grand_means_np - grand_stds_np,
                                 grand_means_np + grand_stds_np, alpha=0.3,color=color)
 
-                # Highlight stabilization areas
-                if is_stable:
-                    first_stable_idx = stabilization_index[0]  # Get the first stabilization index
-                    ax.axvline(x=first_stable_idx, linestyle='--', alpha=0.5,
-                               color=color)  # +1 for 1-based indexing
-
-                    # Annotate the stabilization point with an 'x'
-                    ax.annotate('x',
-                                xy=(first_stable_idx, grand_means_np[first_stable_idx]),
-                                color=color,
-                                fontsize=12,
-                                fontweight='bold',
-                                ha='center',
-                                va='bottom')  # Adjust 'va' as needed for positioning
+                # # Highlight stabilization areas
+                # if is_stable:
+                #     first_stable_idx = stabilization_index[0]  # Get the first stabilization index
+                #     ax.axvline(x=first_stable_idx, linestyle='--', alpha=0.5,
+                #                color=color)  # +1 for 1-based indexing
+                #
+                #     # Annotate the stabilization point with an 'x'
+                #     ax.annotate('x',
+                #                 xy=(first_stable_idx, grand_means_np[first_stable_idx]),
+                #                 color=color,
+                #                 fontsize=12,
+                #                 fontweight='bold',
+                #                 ha='center',
+                #                 va='bottom')  # Adjust 'va' as needed for positioning
                     #text_content.append(f'Less then 5% change for at list 10 points at Rep {first_stable_idx} for layer {layer_indx}')
 
 
@@ -1293,17 +1304,21 @@ def package_concepts(concepts_list, random_concept, healthy_concept):
 
     return experimental_set_rand
 
-def calc_all_concepts(cav_folder,layers,experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,data_loader,target_class):
+def calc_all_concepts(dl_name,cav_folder,layers,experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,data_loader,target_class):
 
 
     for experimental_set_abs in experimental_sets_abs:
         exp_name = experimental_set_abs[0][0].name
         abbr_value = exp_name.split("abbr-")[1].split("_exp")[0]
-        if exp_name=="type-pos_abbr-BCoA_exp-1_form-polygon_resize-false_bg-original-wo-test":
-            abbr_value="BcoA-wo-test" #todo hack for this test
+        if exp_name=="type-pos_abbr-BCoA_exp-2_form-polygon_resize-false_bg-original":
+            abbr_value = "BCoA2"
+        elif exp_name== "type-pos_abbr-BCoA_exp-5_form-polygon_resize-false_bg-original":
+            abbr_value = "BCoA5"
+        elif exp_name== "type-pos_abbr-BCoA_exp-1_form-polygon_resize-false_bg-synth":
+            abbr_value = "BCoAsynth"
 
 
-        run_repetition_wrapper(cav_folder,layers,repeat_nr, experimental_set_abs, type_name, picklefolder, abbr_value, modelnr,data_loader,target_class)
+        run_repetition_wrapper(dl_name,cav_folder,layers,repeat_nr, experimental_set_abs, type_name, picklefolder, abbr_value, modelnr,data_loader,target_class)
     return
 
 if __name__ == "__main__":
@@ -1336,12 +1351,17 @@ if __name__ == "__main__":
     healthy_patches = "healthy_patches"
     random_patches = "random_patches"
     cable = "type-pos_abbr-cable_exp-1_form-polygon_resize-false_bg-original"
-    Marker = "type-pos_abbr-Marker_exp-1_form-polygon_resize-false_bg-original"
+    Marker = "type-pos_abbr-marker_exp-1_form-polygon_resize-false_bg-original"
     BCoA_wo_test = "type-pos_abbr-BCoA_exp-1_form-polygon_resize-false_bg-original-wo-test"
     healthy_patches_valid= "healthy_patches_valid"
     random_patches_valid= "random_patches_valid"
+    #BCoA_onefive="type-pos_abbr-BCoA_exp-1.5_form-polygon_resize-false_bg-original"
+    BCoA_two = "type-pos_abbr-BCoA_exp-2_form-polygon_resize-false_bg-original"
+    BCoA_five = "type-pos_abbr-BCoA_exp-5_form-polygon_resize-false_bg-original"
+    #BCoA_square = "type-pos_abbr-BCoA_exp-1_form-square_resize-false_bg-original"
+    BCoA_synth = "type-pos_abbr-BCoA_exp-1_form-polygon_resize-false_bg-synth"
 
-    device = setup_device(1) #todo can be anything
+    device = setup_device(4) #todo can be anything
 
     BCoA_concept = assemble_concept(BCoA, 0, device,concepts_path=concepts_path)
     BCoA_tmp_concept = assemble_concept(BCoA, 17, device, concepts_path=concepts_path) #todo debug
@@ -1357,6 +1377,12 @@ if __name__ == "__main__":
     cable_concept = assemble_concept(cable, 13, device, concepts_path=concepts_path)
     Marker_concept = assemble_concept(Marker, 5, device, concepts_path=concepts_path)
     BCoA_wo_test_concept = assemble_concept(BCoA_wo_test, 14, device, concepts_path=concepts_path)
+    #BCoA_onefive_concept = assemble_concept(BCoA_onefive, 0, device, concepts_path=concepts_path)
+    BCoA_two_concept = assemble_concept(BCoA_two, 18, device, concepts_path=concepts_path)
+    BCoA_five_concept = assemble_concept(BCoA_five, 19, device, concepts_path=concepts_path)
+    #BCoA_square_concept = assemble_concept(BCoA_square, 20, device, concepts_path=concepts_path)
+    BCoA_synth_concept = assemble_concept(BCoA_synth, 22, device, concepts_path=concepts_path)
+
 
     healthy_patches_concept = assemble_concept(healthy_patches, 2, concepts_path=concepts_path,device=device) #todo ID changed for pickle
     random_patches_concept = assemble_concept(random_patches, 1, concepts_path=concepts_path,device=device) #todo ID changed for pickle
@@ -1372,12 +1398,11 @@ if __name__ == "__main__":
     if modelnr==0:
         path_load_model = '/home/fkraehenbuehl/projects/SalCon/model/models/model_0/densenet pretrain unweighted bce with class weight wd0.0001_model_gc_lr0.0001_epoches5.pt'
     elif modelnr==1:
-        path_load_model = '/home/fkraehenbuehl/projects/SalCon/model/models/model_1/densenet_model_bilinear_lr0.0001_epoches5.pt'
-        path_load_model = '/home/fkraehenbuehl/projects/CaptumTCAV/prep-model/checkpoint_latest_w_concept.pth.tar' #todo temp
+        path_load_model = '/home/fkraehenbuehl/projects/CaptumTCAV/prep-model/models/w_concepts_model_bilinear_lr0.0001_epoches5.pt'
     elif modelnr==2:
-        path_load_model = '/home/fkraehenbuehl/projects/SalCon/model/models/model_2/densenet_model_bilinear_lr0.0001_epoches5-1.pt'
+        path_load_model = '/home/fkraehenbuehl/projects/CaptumTCAV/prep-model/models/wo_concepts_model_bilinear_lr0.0001_epoches5.pt'
     elif modelnr==3:
-        path_load_model = '/home/fkraehenbuehl/projects/SalCon/model/models/model_3/markermodel_model_bilinear_lr0.0001_epoches5.pt'
+        path_load_model ='/home/fkraehenbuehl/projects/CaptumTCAV/prep-model/models/w_marker_model_bilinear_lr0.0001_epoches5.pt'
 
     model=load_and_prepare_model(path_load_model, 5, device)
 
@@ -1395,23 +1420,25 @@ if __name__ == "__main__":
         dataloader = load_data(dataset_type="valid")
     if dl_name=='test':
         dataloader = load_data(dataset_type="test")
+    if dl_name=='testwmarker':
+        dataloader = load_data(dataset_type="testwmarker")
 
     batching=True
 
-    figurefolder= "./chexpert-figures-2" #todo debug 2
+    figurefolder= "./chexpert-figures-3" #todo debug 2
     if not os.path.exists(figurefolder):
         os.makedirs(figurefolder)
 
-    picklefolder = "./chexpert-pickles-2" #todo debug 2
+    picklefolder = "./chexpert-pickles-3" #todo debug 2
     if not os.path.exists(picklefolder):
         os.makedirs(picklefolder)
 
-    cav_folder = "./chexpert-cav-2" #todo debug 2
+    cav_folder = "./chexpert-cav-3" #todo debug 2
     if not os.path.exists(cav_folder):
         os.makedirs(cav_folder)
 
     #run absolute comparision
-    repeat_nr = 30
+    repeat_nr = 24
     type_name=f"abs"
 
 
@@ -1421,10 +1448,11 @@ if __name__ == "__main__":
     # todo debug for now
     #concepts = [BCoA_concept, BCaA_concept,MSign_concept, FIHOOF_concept, AB_concept]
     #concepts = [PILi_concept,SAS_concept]
-    concepts = [BCoA_concept]
-    target_class=[4]#[0,1,2,3,4]
+    #BCoA_onefive_concept,BCoA_two_concept,BCoA_five_concept,BCoA_square_concept,BCoA_synth_concept
+    concepts = [BCoA_concept]#, PILi_concept,SAS_concept]
+    target_class=[3,4]#[0,1,2,3,4]
     experimental_sets_abs = package_concepts(concepts, random_patches_concept, healthy_patches_concept)
-    calc_all_concepts(cav_folder,layers,experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,dataloader,target_class) #todo debug
+    calc_all_concepts(dl_name,cav_folder,layers,experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,dataloader,target_class) #todo debug
 
     type_filter = f"abs"  # todo important to not forget!!!
     model_filter = modelnr
@@ -1434,8 +1462,12 @@ if __name__ == "__main__":
     for experimental_set_abs in experimental_sets_abs:
         exp_name = experimental_set_abs[0][0].name
         abbr_value = exp_name.split("abbr-")[1].split("_exp")[0]
-        if exp_name=="type-pos_abbr-BCoA_exp-1_form-polygon_resize-false_bg-original-wo-test":
-            abbr_value="BcoA-wo-test" #todo hack for this test
+        if exp_name == "type-pos_abbr-BCoA_exp-2_form-polygon_resize-false_bg-original":
+            abbr_value = "BCoA2"
+        elif exp_name == "type-pos_abbr-BCoA_exp-5_form-polygon_resize-false_bg-original":
+            abbr_value = "BCoA5"
+        elif exp_name == "type-pos_abbr-BCoA_exp-1_form-polygon_resize-false_bg-synth":
+            abbr_value = "BCoAsynth"
 
         name_filter = f"{abbr_value}"
 
@@ -1444,9 +1476,9 @@ if __name__ == "__main__":
         filename=f"meanplot_name_{name_filter}_model_{model_filter}_ds_{dl_name}"
         plot_tcav_scores_per_class_mean(figurefolder, filename, layers, dict_of_stats,
                                    experimental_set_abs, num_elements,target_class)
-        filename = f"medianplot_name_{name_filter}_model_{model_filter}_ds_{dl_name}"
-        plot_tcav_scores_per_class_median(figurefolder, filename, layers, dict_of_stats,
-                                   experimental_set_abs,num_elements,target_class,name_filter)
+        # filename = f"medianplot_name_{name_filter}_model_{model_filter}_ds_{dl_name}"
+        # plot_tcav_scores_per_class_median(figurefolder, filename, layers, dict_of_stats,
+        #                            experimental_set_abs,num_elements,target_class,name_filter)
         filename = f"significance_{name_filter}_model_{model_filter}_ds_{dl_name}"
         calc_significance(figurefolder, filename, layers, dict_of_stats,
                                    experimental_set_abs,num_elements,target_class)

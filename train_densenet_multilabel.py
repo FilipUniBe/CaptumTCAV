@@ -313,7 +313,13 @@ if __name__ == "__main__":
         optimizer.load_state_dict(checkpoint['optimizer'])
         start_epoch = checkpoint['epoch'] + 1
         max_auc = checkpoint['best_auc']
-        epoch_min='epoch_min' #todo current running model doesn't have this
+        epoch_min=checkpoint['epoch_min']
+        training_loss=checkpoint['training_loss']
+        val_loss=checkpoint['val_loss']
+        step=checkpoint['step']
+        step_val=checkpoint['step_val']
+        epochs_no_improve=checkpoint['epochs_no_improve']
+
         print(f"Checkpoint loaded, resuming from epoch {start_epoch} with best AUC {max_auc:.4f}")
     else:
         start_epoch = 0
@@ -348,7 +354,12 @@ if __name__ == "__main__":
             'state_dict': model.state_dict(),
             'best_auc': max_auc,
             'optimizer': optimizer.state_dict(),
-            'epoch_min': epoch_min,  # Add this to the checkpoint #todo current running model doesn't have this
+            'epoch_min': epoch_min,
+            'training_loss': training_loss,  # Save training loss
+            'val_loss': val_loss,                # Save validation loss
+            'step': step,                        # Save current training step
+            'step_val': step_val,                 # Save current validation step
+            'epochs_no_improve': epochs_no_improve
         }, checkpoint_path)
 
         if epoch > 10 and epochs_no_improve ==args.n_epochs_stop:
@@ -375,7 +386,7 @@ if __name__ == "__main__":
 
     os.makedirs(RESULT_SAVING+"/seed"+str(args.seed),exist_ok=True)
     file_name="{}_evaluation_metries_{}_lr{}_epoches{}.csv".format(args.name, args.interp, args.lr, args.epochs)
-    file_path=RESULT_SAVING+"/seed"+"/"+file_name
+    file_path=RESULT_SAVING+"/seed" + str(args.seed) +"/"+file_name
     with open(file_path, 'w') as csvfile:
         writer=csv.DictWriter(csvfile, fieldnames=["roc_auc","average precision" ,"accuracy", "test_loss"])
         writer.writeheader()
