@@ -1,23 +1,10 @@
-import os
-import pandas as pd
-import random
 import torch
 import pandas as pd
-
 from main_on_CheXpert import preprocess_excel, load_and_prepare_model
-from model import DenseNet121
-import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch import nn
-import argparse
 import numpy as np
 from sklearn.metrics import roc_auc_score, average_precision_score
-from torch.utils.tensorboard import SummaryWriter
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-import csv
 from data_loading import Load_from_path_Dataset
-from model import DenseNet121
-from sampler import StratifiedSampler
 from tqdm import tqdm
 
 def test(test_dataloader, n_classes, model, device):
@@ -94,7 +81,7 @@ if __name__ == "__main__":
                                           mode="test")
     test_dataloader = DataLoader(test_dataset, batch_size=bs, shuffle=False, num_workers=20)
 
-    path_load_model='/home/fkraehenbuehl/projects/SalCon/model/models/model_0/densenet pretrain unweighted bce with class weight wd0.0001_model_gc_lr0.0001_epoches5.pt'#todo
+    path_load_model='/home/fkraehenbuehl/projects/CaptumTCAV/densenet pretrain unweighted bce with class weight wd0.0001_model_gc_lr0.0001_epoches5.pt'#todo
     device=0#todo
     model = load_and_prepare_model(path_load_model, 5, device)
 

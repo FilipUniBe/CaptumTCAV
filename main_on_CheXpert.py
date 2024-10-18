@@ -219,7 +219,7 @@ def preprocess_excel(labels_meta,exist_labels,useconcepts=False):
 def load_data(dataset_type):
     """Load data"""
     # Access configuration settings
-    config_file_path = '/home/fkraehenbuehl/projects/SalCon/model/config.yaml'
+    config_file_path = '/home/fkraehenbuehl/projects/CaptumTCAV/config.yaml'
     with open(config_file_path, 'r') as f:
         config= yaml.safe_load(f)
 
@@ -1336,7 +1336,7 @@ if __name__ == "__main__":
     os.environ['CUDA_LAUNCH_BLOCKING'] = "1"  # todo can remove after all
     torch.cuda.empty_cache()
 
-    concepts_path = "/home/fkraehenbuehl/projects/SalCon/data/concepts"
+    concepts_path = "/home/fkraehenbuehl/projects/CaptumTCAV/data/concepts"
 
     BCoA="type-pos_abbr-BCoA_exp-1_form-polygon_resize-false_bg-original"
     BCaA="type-pos_abbr-BCaA_exp-1_form-polygon_resize-false_bg-original"
@@ -1355,18 +1355,16 @@ if __name__ == "__main__":
     BCoA_wo_test = "type-pos_abbr-BCoA_exp-1_form-polygon_resize-false_bg-original-wo-test"
     healthy_patches_valid= "healthy_patches_valid"
     random_patches_valid= "random_patches_valid"
-    #BCoA_onefive="type-pos_abbr-BCoA_exp-1.5_form-polygon_resize-false_bg-original"
     BCoA_two = "type-pos_abbr-BCoA_exp-2_form-polygon_resize-false_bg-original"
     BCoA_five = "type-pos_abbr-BCoA_exp-5_form-polygon_resize-false_bg-original"
-    #BCoA_square = "type-pos_abbr-BCoA_exp-1_form-square_resize-false_bg-original"
     BCoA_synth = "type-pos_abbr-BCoA_exp-1_form-polygon_resize-false_bg-synth"
 
-    device = setup_device(4) #todo can be anything
+    device = setup_device()
 
     BCoA_concept = assemble_concept(BCoA, 0, device,concepts_path=concepts_path)
-    BCoA_tmp_concept = assemble_concept(BCoA, 17, device, concepts_path=concepts_path) #todo debug
-    BCaA_concept = assemble_concept(BCaA, 3, device, concepts_path=concepts_path) #todo ID changed for pickle
-    MSign_concept = assemble_concept(MSign, 4, device,concepts_path=concepts_path) #todo ID changed for pickle
+    BCoA_tmp_concept = assemble_concept(BCoA, 17, device, concepts_path=concepts_path)
+    BCaA_concept = assemble_concept(BCaA, 3, device, concepts_path=concepts_path)
+    MSign_concept = assemble_concept(MSign, 4, device,concepts_path=concepts_path)
     FIHOOF_concept = assemble_concept(FIHOOF, 6, device, concepts_path=concepts_path)
     AB_concept = assemble_concept(AB, 7, device, concepts_path=concepts_path)
     BO_concept = assemble_concept(BO, 8, device, concepts_path=concepts_path)
@@ -1377,26 +1375,19 @@ if __name__ == "__main__":
     cable_concept = assemble_concept(cable, 13, device, concepts_path=concepts_path)
     Marker_concept = assemble_concept(Marker, 5, device, concepts_path=concepts_path)
     BCoA_wo_test_concept = assemble_concept(BCoA_wo_test, 14, device, concepts_path=concepts_path)
-    #BCoA_onefive_concept = assemble_concept(BCoA_onefive, 0, device, concepts_path=concepts_path)
     BCoA_two_concept = assemble_concept(BCoA_two, 18, device, concepts_path=concepts_path)
     BCoA_five_concept = assemble_concept(BCoA_five, 19, device, concepts_path=concepts_path)
-    #BCoA_square_concept = assemble_concept(BCoA_square, 20, device, concepts_path=concepts_path)
     BCoA_synth_concept = assemble_concept(BCoA_synth, 22, device, concepts_path=concepts_path)
 
 
-    healthy_patches_concept = assemble_concept(healthy_patches, 2, concepts_path=concepts_path,device=device) #todo ID changed for pickle
-    random_patches_concept = assemble_concept(random_patches, 1, concepts_path=concepts_path,device=device) #todo ID changed for pickle
-    healthy_patches_valid_concept = assemble_concept(healthy_patches_valid, 16, concepts_path=concepts_path,device=device) #todo ID changed for pickle
-    random_patches_valid_concept = assemble_concept(random_patches_valid, 15, concepts_path=concepts_path,device=device) #todo ID changed for pickle
-
-    path_load_model_0 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_0/densenet pretrain unweighted bce with class weight wd0.0001_model_gc_lr0.0001_epoches5.pt'
-    path_load_model_1 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_1/densenet_model_bilinear_lr0.0001_epoches5.pt'
-    path_load_model_2 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_2/densenet_model_bilinear_lr0.0001_epoches5-1.pt'
-    path_load_model_3 = '/home/fkraehenbuehl/projects/SalCon/model/models/model_3/markermodel_model_bilinear_lr0.0001_epoches5.pt'
+    healthy_patches_concept = assemble_concept(healthy_patches, 2, concepts_path=concepts_path,device=device)
+    random_patches_concept = assemble_concept(random_patches, 1, concepts_path=concepts_path,device=device)
+    healthy_patches_valid_concept = assemble_concept(healthy_patches_valid, 16, concepts_path=concepts_path,device=device)
+    random_patches_valid_concept = assemble_concept(random_patches_valid, 15, concepts_path=concepts_path,device=device)
 
     modelnr=1
     if modelnr==0:
-        path_load_model = '/home/fkraehenbuehl/projects/SalCon/model/models/model_0/densenet pretrain unweighted bce with class weight wd0.0001_model_gc_lr0.0001_epoches5.pt'
+        path_load_model = '/home/fkraehenbuehl/projects/CaptumTCAV/densenet pretrain unweighted bce with class weight wd0.0001_model_gc_lr0.0001_epoches5.pt'
     elif modelnr==1:
         path_load_model = '/home/fkraehenbuehl/projects/CaptumTCAV/prep-model/models/w_concepts_model_bilinear_lr0.0001_epoches5.pt'
     elif modelnr==2:
@@ -1425,36 +1416,29 @@ if __name__ == "__main__":
 
     batching=True
 
-    figurefolder= "./chexpert-figures-3" #todo debug 2
+    figurefolder= "./chexpert-figures-3"
     if not os.path.exists(figurefolder):
         os.makedirs(figurefolder)
 
-    picklefolder = "./chexpert-pickles-3" #todo debug 2
+    picklefolder = "./chexpert-pickles-3"
     if not os.path.exists(picklefolder):
         os.makedirs(picklefolder)
 
-    cav_folder = "./chexpert-cav-3" #todo debug 2
+    cav_folder = "./chexpert-cav-3"
     if not os.path.exists(cav_folder):
         os.makedirs(cav_folder)
 
     #run absolute comparision
-    repeat_nr = 24
+    repeat_nr = 30
     type_name=f"abs"
 
-
-    # todo took out debug BCoA,BCaA, because already calculated
-    # concepts = [BCoA_concept, BCaA_concept,MSign_concept, FIHOOF_concept, AB_concept, BO_concept, KL_concept, PC_concept, PILi_concept,
-    #             SAS_concept, cable_concept, Marker_concept]
-    # todo debug for now
-    #concepts = [BCoA_concept, BCaA_concept,MSign_concept, FIHOOF_concept, AB_concept]
-    #concepts = [PILi_concept,SAS_concept]
-    #BCoA_onefive_concept,BCoA_two_concept,BCoA_five_concept,BCoA_square_concept,BCoA_synth_concept
-    concepts = [BCoA_concept]#, PILi_concept,SAS_concept]
-    target_class=[3,4]#[0,1,2,3,4]
+    concepts = [BCoA_concept, BCaA_concept,MSign_concept, FIHOOF_concept, AB_concept]
+    concepts = [BCoA_concept]
+    target_class=[3,4]
     experimental_sets_abs = package_concepts(concepts, random_patches_concept, healthy_patches_concept)
     calc_all_concepts(dl_name,cav_folder,layers,experimental_sets_abs,repeat_nr,type_name,picklefolder,modelnr,dataloader,target_class) #todo debug
 
-    type_filter = f"abs"  # todo important to not forget!!!
+    type_filter = f"abs"
     model_filter = modelnr
     repetition=None
     score_type="sign_count"
@@ -1476,9 +1460,6 @@ if __name__ == "__main__":
         filename=f"meanplot_name_{name_filter}_model_{model_filter}_ds_{dl_name}"
         plot_tcav_scores_per_class_mean(figurefolder, filename, layers, dict_of_stats,
                                    experimental_set_abs, num_elements,target_class)
-        # filename = f"medianplot_name_{name_filter}_model_{model_filter}_ds_{dl_name}"
-        # plot_tcav_scores_per_class_median(figurefolder, filename, layers, dict_of_stats,
-        #                            experimental_set_abs,num_elements,target_class,name_filter)
         filename = f"significance_{name_filter}_model_{model_filter}_ds_{dl_name}"
         calc_significance(figurefolder, filename, layers, dict_of_stats,
                                    experimental_set_abs,num_elements,target_class)
@@ -1486,9 +1467,6 @@ if __name__ == "__main__":
 
         #line plot tracking means
         dict_of_stats,num_elements=calculate_tcav_stats_with_repetitions(model_filter,dl_name,name_filter,type_filter,picklefolder, layers, experimental_set_abs, score_type="sign_count", repetition=None)
-        # filename = f"cumulative_median_name_{name_filter}_model_{model_filter}"
-        # plot_cumulative_tcav_median_for_class(figurefolder, filename, layers, dict_of_stats,
-        #                                       experimental_set_abs, num_elements, target_class)
         filename = f"cumulative_mean_name_{name_filter}_model_{model_filter}_ds_{dl_name}"
         plot_cumulative_tcav_grandmean_for_class(figurefolder, filename, layers, dict_of_stats,
                                                  experimental_set_abs, num_elements, target_class)
