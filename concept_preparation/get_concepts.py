@@ -10,6 +10,7 @@ import os
 import json
 import numpy as np
 import matplotlib.pyplot as plt
+import yaml
 from matplotlib import image as mpimg
 from shapely.geometry import Polygon, box
 from sklearn.cluster import KMeans
@@ -1133,7 +1134,10 @@ def get_concepts(force_overwrite):
 
     # Load model
     logging.info("Loading model configuration...")
-    config = load_config()
+    # Access configuration settings
+    config_file_path = '/home/fkraehenbuehl/projects/CaptumTCAV/config.yaml'
+    with open(config_file_path, 'r') as f:
+        config = yaml.safe_load(f)
     datadir=config["data_dir"]
     image_folder = os.path.join(datadir, "train")
     image_height = config["image_height"]
@@ -1176,51 +1180,10 @@ def get_concepts(force_overwrite):
     logging.info("Clean up data...")
     pickle_data = clean_up_data(pickle_data)
     logging.info(f"Clean up data processed.")
-    #pickle_data = pickle_data[:3] #hack for debuging
-
-    # expansion_factors = [1.5, 2, 5]  # todo never tried other expansions. 10 is likely already to much?
-    # logging.info("Adding expansion annotations...")
-    # pickle_data = expanion_polygon(pickle_data, image_width, image_height, expansion_factors)
-    # logging.info(f"Adding expansion annotations processed. Added ")
-    #
-    # logging.info("Adding square annotations...")
-    # pickle_data = square_polygon(pickle_data, image_width, image_height) #todo this is old content
-    # logging.info(f"Adding square annotations processed.")
-    #
-    # # Save the combined data as pickle in current directory
-    # pickle_file="processed_data.pkl"
-    # with open(pickle_file, "wb") as f:
-    #     pickle.dump(pickle_data, f)
 
     logging.info("Cropping images...")
     crop_image(pickle_data, image_folder, concept_folder,force_overwrite)
     logging.info(f"Cropping images processed.")
-
-    # logging.info("Synthesizing Background...")
-    # print_hardcoded_bg_patch()  # patch needed for synth background
-    # synthetisize_backgroundsynthetisize_background(concept_folder, pickle_data,force_overwrite)
-    # logging.info(f"Synthesizing Background processed.")
-    #
-    # logging.info("Resizing images...")
-    # resize_images_in_directory(concept_folder, force_overwrite,new_size=(image_width,image_height))
-    # logging.info(f"Resizing images processed.")
-    #
-    # logging.info("Adding uncropped concepts...")
-    # add_uncropped_concepts(pickle_data,datadir,concept_folder,force_overwrite) #not concept-type specific though, only original size
-    # logging.info(f"Adding uncropped concepts processed.")
-
-    # logging.info("Visualizing Patient...")
-    # files = [f for f in os.listdir(concept_folder) if os.path.isfile(os.path.join(concept_folder, f))]
-    # #random_filename = random.choice(files)
-    # random_filename = "type-pos_abbr-BCoA_exp-1.5_form-square_resize-false_bg-original_nr-004_json-1_filename-patient00039-study4-view1_frontal.jpg" #todo good test case
-    # #visualize_patient(concept_folder,random_filename,force_overwrite)
-    # logging.info(f"Visualizing Patient processed.") #todo also not adaptable to different paramteter settings
-
-
-    # Analyze cropping statistics at runtime
-    #logging.info("Calculating annotation statistics...")
-    #annotation_stats(json_files,image_width,image_height) #todo still shit todo?
-    #logging.info(f"Calculating annotation statistics processed.")
 
     logging.info("successfully run through get_concepts.py")
 

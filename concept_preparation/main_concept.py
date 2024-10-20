@@ -7,15 +7,13 @@ import itertools
 from collections import Counter, defaultdict
 
 import pandas as pd
+import yaml
 
-from concept_preparation.get_negative_concepts import get_negative_concepts
 from concept_preparation.get_concepts import extract_components, extract_data, get_concepts
 
 import logging
-from logging_config import setup_logging
 
 # importing sys
-from model.init import load_config
 import sys
 sys.path.insert(0, '../tcav')
 
@@ -647,19 +645,17 @@ def generate_report(concept_folder, json_files):
     return
 
 if __name__ == "__main__": #todo
-    # Initialize logging
-    setup_logging(log_dir='concept_prep')
-    logging.info(f"Script execution started")
 
-    config = load_config()
+    # Access configuration settings
+    config_file_path = '/home/fkraehenbuehl/projects/CaptumTCAV/config.yaml'
+    with open(config_file_path, 'r') as f:
+        config = yaml.safe_load(f)
     concept_folder = config.get("concept_folder", "/home/fkraehenbuehl/projects/CaptumTCAV/data/concepts/")
     force_overwrite = config.get("force_overwrite", False)
     json_files = config.get("json_files", "project_vgg_annotation_1.json")
 
-
     #only required for setup (or re-setup)
     get_concepts(force_overwrite)# todo uncomment
-    get_negative_concepts(force_overwrite)# todo uncomment
     # # TCAV concepts rely on folder-structure
     prepare_concept_folders(concept_folder,force_overwrite)#todo uncomment  json_files = config.get("json_files", "project_vgg_annotation_1.json")
     generate_report(concept_folder, json_files)
